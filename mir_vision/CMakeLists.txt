@@ -10,9 +10,14 @@ set( sample_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  geometry_msgs
   roscpp
   rospy
-  std_msgs
+  std_msgs 
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  turtlesim
 )
 # find_package(VISP REQUIRED 
 #   visp_core 
@@ -114,7 +119,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES mir_vision
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs tf2 tf2_ros
 #  DEPENDS system_lib
 )
 
