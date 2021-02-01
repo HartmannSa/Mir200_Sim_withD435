@@ -1,0 +1,16 @@
+<launch>
+  <!-- include run file from the buttom to top. So the first file will be excuted at the first-->
+
+  <!-- Start rviz, map server, move base node -->
+  <include file="$(find mir_navigation)/launch/mir_launch/nav_start.launch">
+  </include>
+
+  <!-- Start amcl -->
+  <include file="$(find mir_navigation)/launch/mir_launch/local_start.launch">
+  </include>
+
+  <!-- Start empty world in Gazebo and spawn robot -->
+  <include file="$(find mir_navigation)/launch/mir_launch/sim_start.launch">
+  </include>
+
+</launch>
