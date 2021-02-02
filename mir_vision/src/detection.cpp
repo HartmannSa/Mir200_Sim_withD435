@@ -1,30 +1,26 @@
 #include <ros/ros.h>
-
-#include "std_msgs/String.h"
-#include <sstream>
-#include <geometry_msgs/Transform.h>
-
 #include <tf2/LinearMath/Quaternion.h>
+#include <std_msgs/String.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
-#include <turtlesim/Pose.h>
+#include <geometry_msgs/Transform.h>
+#include<unistd.h>
+
+
+
   
-//  std::string camera_name;  
-  
-  
-void poseCallback(const turtlesim::PoseConstPtr& msg)
+void poseCallback(const std::string parent_frame, const std::string child_frame, const tf2::Quaternion& q, const std::vector<double>& translation)
 {
   static tf2_ros::TransformBroadcaster br;
   geometry_msgs::TransformStamped transformStamped;
 
   transformStamped.header.stamp = ros::Time::now();
-  transformStamped.header.frame_id = "camer_base_link";
-  transformStamped.child_frame_id = "object";
-  transformStamped.transform.translation.x = 1.0;
-  transformStamped.transform.translation.y = 2.0;
-  transformStamped.transform.translation.z = 0.0;
-  tf2::Quaternion q;
-  q.setRPY(0, 0, 1.4);
+  transformStamped.header.frame_id = parent_frame;
+  transformStamped.child_frame_id = child_frame;
+
+  transformStamped.transform.translation.x = translation[0];
+  transformStamped.transform.translation.y = translation[1];
+  transformStamped.transform.translation.z = translation[2];
   transformStamped.transform.rotation.x = q.x();
   transformStamped.transform.rotation.y = q.y();
   transformStamped.transform.rotation.z = q.z();
@@ -34,44 +30,32 @@ void poseCallback(const turtlesim::PoseConstPtr& msg)
 }
   
 int main(int argc, char** argv)
-{
-  ros::init(argc, argv, "camera_broadcaster");
-  
-  // ros::NodeHandle n;
-  // ros::Publisher chatter_pub = n.advertise<std_msgs::String>("chatter", 1000);
-  // ros::Rate loop_rate(10);
-  // int count = 0;
-  // while (ros::ok())
-  // {
-  //   std_msgs::String msg;
-  //   std::stringstream ss;
-  //   ss << "hello world " << count;
-  //   msg.data = ss.str();
-  //   ROS_INFO("%s", msg.data.c_str());
-  //   chatter_pub.publish(msg);
+{   
+  tf2::Quaternion q;
+  q[0] = 0;
+  q[1] = 1;
+  q[2] = 0;
+  q[3] = 0;
 
-  //   ros::spinOnce();
-  //   loop_rate.sleep();
-  //   ++count;
-  // }
-  
-  //  if (! n.hasParam("camera"))
-  //  {
-  //      if (argc != 2)
-  //      {
-  //          ROS_ERROR("need camera name as argument"); 
-  //          return -1;
-  //       };
-  //       camera_name = argv[1];
-  //  }
-  //  else
-  //  {
-  //    n.getParam("camera", camera_name);
-  //  }
-     
-   ros::NodeHandle node;   
-   ros::Subscriber sub = node.subscribe("camera/color/image_raw", 1000, &poseCallback);
-   ros::spin();
+  std::vector<double> translation {0,0,0};
+  translation[0] = 1.0;
+  translation[1] = 2.0;
+  translation[2] = 0.0;
 
-   return 0;
- };
+  unsigned int microsecond = 1000000;
+  int n = 0;
+
+  ros::init(argc, argv, "cam_object_broadcaster");
+
+  while(n<20) {
+
+    std::cout << "Test " << n << "\n";
+
+    poseCallback("base_link", "object", q, translation);
+    usleep(2 * microsecond);//sleeps for 2 second
+    n++;
+
+  };
+  // ros::spin();
+  return 0;
+};
