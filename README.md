@@ -82,7 +82,6 @@ rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 #####################################################################################################
 # INSTALL
 
-
 ├── librealsense
 └── visp-ws
     ├── visp
