@@ -77,25 +77,54 @@ rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 ```
 
 
+#####################################################################################################
+# Install WS to use with object detection and D435
+#####################################################################################################
+# INSTALL
+
+# For "realsense-ros" ddynamic reconfigure is needed
+sudo apt install ros-melodic-ddynamic-reconfigure
+
+# The realsense-ros-2.2.20 needs "librealsense" to be installed.
+# For this installation there are two options.
+# Install from Debian Package 
+# (e.g. https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md#installing-the-packages )
+# or manual installation (my case)
+# https://github.com/IntelRealSense/librealsense/blob/master/doc/installation.md
+# However pay attenntion on versions!
+# librealsense2 and RosWrapper need to fit together -> fitting versions under latest releses
+
+
+# The realsense-ros wrapper can be downloaded from 
+# https://github.com/IntelRealSense/realsense-ros/releases
+# There you will find an overview of the current versions and releases
+# I used the ROS Wrapper 2.0 for Intel® RealSense™ Devices (build 2.2.20) (Hash fbbb1a7)
+# which is compatible with my LibRealSense v2.40.0
+# Under Assets download the zip and unzip it
+# Save the folder in your catkin_ws/src
 
 
 
-# 6 Use and install Intel Realsense D435 Camera
+# To simulate Realsense Cam in Gazebo, the Package "realsense_gazebo_plugin" is needed.
+# Further information about how to include the D435 Plugin with MiR 
+# can be found in the Readme in Mir200_Sim_withD435 package/ see below
+
 # Intel RealSense Gazebo ROS plugin
-
 This package is a Gazebo ROS plugin for the Intel D435 realsense camera.
  
 ## Acknowledgement
-
 This is a continuation of work done by [SyrianSpock](https://github.com/SyrianSpock) for a Gazebo ROS plugin with RS200 camera.
-
 This package also includes the work developed by Intel Corporation with the ROS model fo the [D435](https://github.com/intel-ros/realsense) camera.
 
 ### Install Plugin (in MiR workspace)
-1. Download this package from https://github.com/pal-robotics/realsense_gazebo_plugin
+1. Download this package from https://github.com/pal-robotics/realsense_gazebo_plugin, for example with:
+	git clone -b melodic-devel https://github.com/pal-robotics/realsense_gazebo_plugin.git
 2. Save it into your catkin_ws/src folder
 3. Compile with catkin_make
--> This will generate a shared library called librealsense_gazebo_plugin.so 
+-> This will generate a shared library called librealsense_gazebo_plugin.so
+
+# The next steps are already done, if you clone HartmannSa/MiR200_Sim_withD435 Repo. 
+# If you clone the rosmatch/MiR200_Sim repo they need do be done! 
 4. Download the two xacro files from 
 	https://github.com/pal-robotics-forks/realsense/tree/upstream/realsense2_description/urdf 
 	_d435.gazebo.xacro 
@@ -105,7 +134,6 @@ AND download the mesh from
 	d435.dae
 5. Save two xacro-files in the package inside the urdf folder, where you want your realsense to be simulated (e.g. ~/catkin_ws/src/MiR200/mir_description/urdf/include ).
 The dae-file can be saved under mir_description/meshes/visual/.
-
 Some Changes in the downloaded Files are made, so that they are loaded with the Mir Model AND that two cameras can be spawned (and dont publish on the same topic)
 6. In the file _d435.urdf.xacro 
 	change the packagename "realsense2_description" in line 13 
@@ -142,8 +170,6 @@ Some Changes in the downloaded Files are made, so that they are loaded with the 
 	Obviously, all old camera tags, etc has to be uncommented/ deleted.
 
 8. in mir_200.gazebo.xacro the camera tag is not needed anymore and should be deleted.
-
-
 9. Afterwards when you launch the file which uses this urdf model,
 	 you will find the simulate realsense and you should see rostopics like 
 	/camera_arm/color/image_raw
