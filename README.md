@@ -82,6 +82,37 @@ rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 #####################################################################################################
 # INSTALL
 
+
+├── librealsense
+└── visp-ws
+    ├── visp
+    ├── visp-build
+    ├── build
+    ├── devel
+    └── src
+        ├── CMakeLists.txt
+        ├── realsense_gazebo_plugin
+        ├ 	├── package.xml
+        ├ 	├── CMakeLists.txt
+        ├	└── ...
+        ├── realsense-ros
+        ├ 	├── realsense2_camera
+        ├	├	└── ...
+        ├	└── realsense2_description
+        ├		└── ...
+        └── Mir200_withD435
+         	├── mir_navigation
+         	├── ...
+        	└── mir_vision
+         		├── CMakeLists.txt
+         		├── package.xml
+       	  		└── src
+      	 		     ├── tutorial-viewer.cpp
+      	 		     └── tutorial-mb-generic-tracker-rgbd-realsense.cpp
+
+realsense-ros Version needs to fit the librealsense version!
+
+
 # For "realsense-ros" ddynamic reconfigure is needed
 sudo apt install ros-melodic-ddynamic-reconfigure
 
