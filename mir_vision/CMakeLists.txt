@@ -154,7 +154,7 @@ include_directories(
 add_executable( image_display ${sample_dir}tutorial-image-display.cpp )
 #add_executable( detection ${sample_dir}detection.cpp )
 add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-realsense.cpp )
-#add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
+add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -172,9 +172,8 @@ add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-reals
 # )
 target_link_libraries(image_display ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 #target_link_libraries(detection ${catkin_LIBRARIES} )
-#target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} ${realsense2_LIBRARY})
 target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} )
-#target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 
 
 #############

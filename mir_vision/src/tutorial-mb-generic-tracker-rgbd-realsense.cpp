@@ -14,8 +14,52 @@
 #include <visp3/sensor/vpRealSense2.h>
 #include <visp3/vision/vpKeyPoint.h>
 
+
+#include <ros/ros.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <std_msgs/String.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/Transform.h>
+#include <unistd.h>
+
+
+void broadcast_transformation(const std::string parent_frame, const std::string child_frame, const vpQuaternionVector& q, const vpTranslationVector& translation) 
+{
+  static tf2_ros::TransformBroadcaster br;
+  geometry_msgs::TransformStamped transformStamped;
+
+  transformStamped.header.stamp = ros::Time::now();
+  transformStamped.header.frame_id = parent_frame;
+  transformStamped.child_frame_id = child_frame;
+
+  transformStamped.transform.translation.x = translation[0];
+  transformStamped.transform.translation.y = translation[1];
+  transformStamped.transform.translation.z = translation[2];
+  transformStamped.transform.rotation.x = q.x();
+  transformStamped.transform.rotation.y = q.y();
+  transformStamped.transform.rotation.z = q.z();
+  transformStamped.transform.rotation.w = q.w();
+
+  br.sendTransform(transformStamped);
+
+}
+
 int main(int argc, char *argv[])
 {
+  // ----------------------------------------------------------------------------------------------------------------------------------------------------------
+  const std::string parent_frame = "camera";
+  const std::string child_frame = "object";
+  vpQuaternionVector q;
+  q[0] = 0;
+  q[1] = 1;
+  q[2] = 0;
+  q[3] = 0;
+  vpTranslationVector translation;
+  ros::init(argc, argv, "cam_object_broadcaster");
+  // ----------------------------------------------------------------------------------------------------------------------------------------------------------
+  
+  
   std::string config_color = "", config_depth = "";
   std::string model_color = "", model_depth = "";
   std::string init_file = "";
@@ -384,9 +428,17 @@ int main(int argc, char *argv[])
         }
       }
 
+      // ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+      // Get and Send Transformation
+      // ----------------------------------------------------------------------------------------------------------------------------------------------------------------
       // Get object pose
       cMo = tracker.getPose();
-
+      //std::cout << cMo << "\n";
+      cMo.extract(q);
+      cMo.extract(translation);
+      broadcast_transformation(parent_frame, child_frame, q, translation);
+      // ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+     
       // Check tracking errors
       double proj_error = 0;
       if (tracker.getTrackerType() & vpMbGenericTracker::EDGE_TRACKER) {
