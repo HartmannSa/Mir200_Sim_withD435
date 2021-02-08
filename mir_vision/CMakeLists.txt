@@ -151,8 +151,9 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/mir_vision_node.cpp)
-add_executable( image_display ${sample_dir}tutorial-image-display.cpp )
-#add_executable( detection ${sample_dir}detection.cpp )
+# add_executable( image_display ${sample_dir}tutorial-image-display.cpp )
+# add_executable( broadcaster ${sample_dir}broadcaster_test.cpp )
+add_executable( detection ${sample_dir}detection.cpp )
 add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-realsense.cpp )
 add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
 
@@ -170,10 +171,14 @@ add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
-target_link_libraries(image_display ${catkin_LIBRARIES} ${VISP_LIBRARIES})
-#target_link_libraries(detection ${catkin_LIBRARIES} )
+# target_link_libraries(image_display ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+# target_link_libraries(broadcaster ${catkin_LIBRARIES} )
+target_link_libraries(detection ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} )
 target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+
+# copy the needed Data/model files
+visp_copy_dir(detection.cpp "${CMAKE_CURRENT_SOURCE_DIR}" model)
 
 
 #############
