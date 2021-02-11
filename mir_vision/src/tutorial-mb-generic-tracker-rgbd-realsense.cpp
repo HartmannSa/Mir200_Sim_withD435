@@ -433,7 +433,8 @@ int main(int argc, char *argv[])
       // ----------------------------------------------------------------------------------------------------------------------------------------------------------------
       // Get object pose
       cMo = tracker.getPose();
-      //std::cout << cMo << "\n";
+      std::cout << "cMo -> " << cMo << "\n";
+      std::cout << "depth_M_color -> " << depth_M_color << "\n";
       cMo.extract(q);
       cMo.extract(translation);
       broadcast_transformation(parent_frame, child_frame, q, translation);

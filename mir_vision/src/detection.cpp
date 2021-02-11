@@ -23,6 +23,9 @@
 #include <geometry_msgs/Transform.h>
 #include <unistd.h>
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
 
 void broadcast_transformation(const std::string parent_frame, const std::string child_frame, const vpQuaternionVector& q, const vpTranslationVector& translation) 
 {
@@ -48,21 +51,19 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 int main(int argc, char *argv[])
 {
   // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-  std::string parent_frame = "camera_arm_color_frame";
-  std::string child_frame = "object";
+
   vpQuaternionVector q;
   q[0] = 0;
   q[1] = 1;
   q[2] = 0;
   q[3] = 0;
-  vpTranslationVector translation;
-  ros::init(argc, argv, "cam_object_broadcaster");
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-  
-  
+  vpTranslationVector translation;    
+  std::string parent_frame = "camera_arm_color_optical_frame";
+  std::string child_frame = "object";
   std::string config_color = "", config_depth = "";
   std::string model_color = "", model_depth = "";
   std::string init_file = "";
+  std::string learning_data = "learning/data-learned.bin";
   bool use_ogre = false;
   bool use_scanline = false;
   bool use_edges = true;
@@ -70,9 +71,9 @@ int main(int argc, char *argv[])
   bool use_depth = true;
   bool learn = false;
   bool auto_init = false;
-  double proj_error_threshold = 25;
-  std::string learning_data = "learning/data-learned.bin";
+  bool broadcast_transform = false;
   bool display_projection_error = false;
+  double proj_error_threshold = 25;
 
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
   // Get user input
@@ -110,6 +111,8 @@ int main(int argc, char *argv[])
       display_projection_error = true;
     } else if (std::string(argv[i]) == "--parent_frame" && i+1 < argc) {
       parent_frame = std::string(argv[i+1]);
+    } else if (std::string(argv[i]) == "--broadcast_transform") {
+      broadcast_transform = true;
     } else if (std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h") {
       std::cout << "Usage: \n" << argv[0]
                 << " [--model_color <object.cao>] [--model_depth <object.cao>]"
@@ -118,7 +121,7 @@ int main(int argc, char *argv[])
                    " [--proj_error_threshold <threshold between 0 and 90> (default: "<< proj_error_threshold << ")]"
                    " [--use_edges <0|1> (default: 1)] [--use_klt <0|1> (default: 1)] [--use_depth <0|1> (default: 1)]"
                    " [--learn] [--auto_init] [--learning_data <path to .bin> (default: learning/data-learned.bin)]"
-                   " [--display_proj_error] [--parent_frame <name>]" << std::endl;
+                   " [--display_proj_error] [--parent_frame <name>] [--broadcast_transform]" << std::endl;
 
       std::cout << "\n** How to track a 4.2 cm width cube with manual initialization:\n"
                 << argv[0]
@@ -130,7 +133,6 @@ int main(int argc, char *argv[])
       std::cout << "\n** How to track the cube with initialization from learning database:\n" << argv[0]
                 << " --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1 --auto_init"
                 << std::endl;
-
       return 0;
     }
   }
@@ -183,6 +185,10 @@ int main(int argc, char *argv[])
     std::cout << "config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()" << std::endl;
     return EXIT_FAILURE;
   }
+
+  if (broadcast_transform) {
+    ros::init(argc, argv, "cam_object_broadcaster");
+  }
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
  
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -204,7 +210,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
   }
 
-  vpCameraParameters cam_color = realsense.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion);
+  vpCameraParameters cam_color = realsense.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion); //perspectiveProjWithDistortion
   vpCameraParameters cam_depth = realsense.getCameraParameters(RS2_STREAM_DEPTH, vpCameraParameters::perspectiveProjWithoutDistortion);
   std::cout << "Sensor internal camera parameters for color camera: " << cam_color << std::endl;
   std::cout << "Sensor internal camera parameters for depth camera: " << cam_depth << std::endl;
@@ -498,12 +504,29 @@ int main(int argc, char *argv[])
       // --------------------------------------------------------------------------------------------------------------------------
       // Get and Send Transformation
       // --------------------------------------------------------------------------------------------------------------------------
-      // Get object pose
-      cMo = tracker.getPose();
-      //std::cout << cMo << "\n";
-      cMo.extract(q);
-      cMo.extract(translation);
-      broadcast_transformation(parent_frame, child_frame, q, translation);
+      if (broadcast_transform){
+        // Get object pose
+        cMo = tracker.getPose();
+        std::cout << "cMo " << cMo << "\n";
+        std::cout << "depth_M_color -> " << depth_M_color << "\n";
+
+        // 2.1 Converting the rotation matrix to Euler angle
+        // ZYX order, that is, roll around the x axis, then around the y axis pitch, and finally around the z axis yaw, 0 for the X axis, 1 for the Y axis, 2 for the Z axis
+        Eigen::Matrix3d rotation_matrix;
+        vpRotationMatrix R;
+        cMo.extract(R);
+        for (unsigned int ii = 0; ii < R.getRows(); ii++) {
+          for (unsigned int jj = 0; jj < R.getCols(); jj++) {
+            rotation_matrix(ii, jj) = R[ii][jj];
+          }
+        }
+        Eigen::Vector3d euler_angles = rotation_matrix.eulerAngles(2, 1, 0); 
+        std::cout << "yaw(z) pitch(y) roll(x) = " << euler_angles.transpose() << std::endl;
+
+        cMo.extract(q);
+        cMo.extract(translation);
+        broadcast_transformation(parent_frame, child_frame, q, translation);
+      }
       // --------------------------------------------------------------------------------------------------------------------------
 
       // --------------------------------------------------------------------------------------------------------------------------
