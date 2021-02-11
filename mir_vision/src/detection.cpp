@@ -58,84 +58,57 @@ int main(int argc, char *argv[])
   q[2] = 0;
   q[3] = 0;
   vpTranslationVector translation;    
-  std::string parent_frame = "camera_arm_color_optical_frame";
-  std::string child_frame = "object";
-  std::string config_color = "", config_depth = "";
-  std::string model_color = "", model_depth = "";
-  std::string init_file = "";
-  std::string learning_data = "learning/data-learned.bin";
-  bool use_ogre = false;
-  bool use_scanline = false;
-  bool use_edges = true;
-  bool use_klt = true;
-  bool use_depth = true;
-  bool learn = false;
-  bool auto_init = false;
-  bool broadcast_transform = false;
-  bool display_projection_error = false;
-  double proj_error_threshold = 25;
+  std::string parent_frame, child_frame;
+  std::string config_color, config_depth;
+  std::string model_color, model_depth;
+  std::string init_file;
+  std::string learning_data;
+  bool use_ogre;
+  bool use_scanline;
+  bool use_edges;
+  bool use_klt;
+  bool use_depth;
+  bool learn;
+  bool auto_init;
+  bool display_projection_error;
+  bool broadcast_transform;
+  double proj_error_threshold;
 
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-  // Get user input
+  // Get Params
   // ---------------------------------------------------------------------------------------------------------------------------------------------------------- 
-  for (int i = 1; i < argc; i++) {
-    if (std::string(argv[i]) == "--config_color" && i+1 < argc) {
-      config_color = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--config_depth" && i+1 < argc) {
-      config_depth = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--model_color" && i+1 < argc) {
-      model_color = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--model_depth" && i+1 < argc) {
-      model_depth = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--init_file" && i+1 < argc) {
-      init_file = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--proj_error_threshold" && i+1 < argc) {
-      proj_error_threshold = std::atof(argv[i+1]);
-    } else if (std::string(argv[i]) == "--use_ogre") {
-      use_ogre = true;
-    } else if (std::string(argv[i]) == "--use_scanline") {
-      use_scanline = true;
-    } else if (std::string(argv[i]) == "--use_edges" && i+1 < argc) {
-      use_edges = (std::atoi(argv[i+1]) == 0 ? false : true);
-    } else if (std::string(argv[i]) == "--use_klt" && i+1 < argc) {
-      use_klt = (std::atoi(argv[i+1]) == 0 ? false : true);
-    } else if (std::string(argv[i]) == "--use_depth" && i+1 < argc) {
-      use_depth = (std::atoi(argv[i+1]) == 0 ? false : true);
-    } else if (std::string(argv[i]) == "--learn") {
-      learn = true;
-    } else if (std::string(argv[i]) == "--learning_data" && i+1 < argc) {
-      learning_data = argv[i+1];
-    } else if (std::string(argv[i]) == "--auto_init") {
-      auto_init = true;
-    } else if (std::string(argv[i]) == "--display_proj_error") {
-      display_projection_error = true;
-    } else if (std::string(argv[i]) == "--parent_frame" && i+1 < argc) {
-      parent_frame = std::string(argv[i+1]);
-    } else if (std::string(argv[i]) == "--broadcast_transform") {
-      broadcast_transform = true;
-    } else if (std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h") {
-      std::cout << "Usage: \n" << argv[0]
-                << " [--model_color <object.cao>] [--model_depth <object.cao>]"
-                   " [--config_color <object.xml>] [--config_depth <object.xml>]"
-                   " [--init_file <object.init>] [--use_ogre] [--use_scanline]"
-                   " [--proj_error_threshold <threshold between 0 and 90> (default: "<< proj_error_threshold << ")]"
-                   " [--use_edges <0|1> (default: 1)] [--use_klt <0|1> (default: 1)] [--use_depth <0|1> (default: 1)]"
-                   " [--learn] [--auto_init] [--learning_data <path to .bin> (default: learning/data-learned.bin)]"
-                   " [--display_proj_error] [--parent_frame <name>] [--broadcast_transform]" << std::endl;
+  ros::init(argc, argv, "cam_detection");
+  ros::NodeHandle nh("~");    // ("~") to get private parameters (private namespace)
+	ROS_INFO("Detection node has been started");
 
-      std::cout << "\n** How to track a 4.2 cm width cube with manual initialization:\n"
-                << argv[0]
-                << " --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1"
-                << std::endl;
-      std::cout << "\n** How to learn the cube and create a learning database:\n" << argv[0]
-                << " --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1 --learn"
-                << std::endl;
-      std::cout << "\n** How to track the cube with initialization from learning database:\n" << argv[0]
-                << " --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1 --auto_init"
-                << std::endl;
-      return 0;
-    }
-  }
+  nh.param<std::string>("parent_frame", parent_frame, "camera_arm_color_optical_frame");
+  nh.param<std::string>("child_frame", child_frame, "object");
+  nh.param<std::string>("config_color", config_color, "");
+  nh.param<std::string>("config_depth", config_depth, "");
+  nh.param<std::string>("model_color", model_color, "");
+  nh.param<std::string>("model_depth", model_depth, "");
+  nh.param<std::string>("init_file", init_file, "");
+  nh.param<std::string>("learning_data", learning_data, "learning/data-learned.bin");  
+  nh.param<bool>("use_ogre", use_ogre, false);
+  nh.param<bool>("use_scanline", use_scanline, false);
+  nh.param<bool>("use_edges", use_edges, true);
+  nh.param<bool>("use_klt", use_klt, true);
+  nh.param<bool>("use_depth", use_depth, true);
+  nh.param<bool>("learn", learn, false);
+  nh.param<bool>("auto_init", auto_init, false);
+  nh.param<bool>("display_projection_error", display_projection_error, false);
+  nh.param<bool>("broadcast_transform", broadcast_transform, true);
+  nh.param<double>("proj_error_threshold", proj_error_threshold, 25);
+
+// How to track a 4.2 cm width cube with manual initialization:
+// --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1
+
+// How to learn the cube and create a learning database:
+// --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1 --learn
+
+// How to track the cube with initialization from learning database:
+// --model_color model/cube/cube.cao --use_edges 1 --use_klt 1 --use_depth 1 --auto_init
+
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
   
   // ----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -507,8 +480,8 @@ int main(int argc, char *argv[])
       if (broadcast_transform){
         // Get object pose
         cMo = tracker.getPose();
-        std::cout << "cMo " << cMo << "\n";
-        std::cout << "depth_M_color -> " << depth_M_color << "\n";
+        // std::cout << "cMo " << cMo << "\n";
+        // std::cout << "depth_M_color -> " << depth_M_color << "\n";
 
         // 2.1 Converting the rotation matrix to Euler angle
         // ZYX order, that is, roll around the x axis, then around the y axis pitch, and finally around the z axis yaw, 0 for the X axis, 1 for the Y axis, 2 for the Z axis
@@ -521,7 +494,7 @@ int main(int argc, char *argv[])
           }
         }
         Eigen::Vector3d euler_angles = rotation_matrix.eulerAngles(2, 1, 0); 
-        std::cout << "yaw(z) pitch(y) roll(x) = " << euler_angles.transpose() << std::endl;
+        // std::cout << "yaw(z) pitch(y) roll(x) = " << euler_angles.transpose() << std::endl;
 
         cMo.extract(q);
         cMo.extract(translation);

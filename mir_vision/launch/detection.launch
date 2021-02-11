@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<launch>
+
+  <!--Start detection-->
+  <node pkg="mir_vision" type="detection" name="detection" output="screen" >
+    <param name="model_color" type="str"  value="$(find mir_vision)/model/teabox/teabox.cao" /> 
+    <param name="use_edges"   type="bool" value="1" />
+    <param name="use_klt"     type="bool" value="1" />
+    <param name="use_depth"   type="bool" value="1" />
+  </node>
+
+</launch>
