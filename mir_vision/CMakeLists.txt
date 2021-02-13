@@ -4,10 +4,12 @@ project(mir_vision)
 set( sample_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/)
 
 find_package(catkin REQUIRED COMPONENTS
-  actionlib  
+  actionlib 
+  actionlib_msgs 
   geometry_msgs
   message_generation
   nav_msgs
+  roslib
   roscpp
   rospy
   std_msgs 
@@ -23,12 +25,8 @@ find_package(VISP REQUIRED
    visp_gui 
    visp_sensor
 )
+find_package(Boost REQUIRED COMPONENTS system)
 # find_package(realsense2 REQUIRED)
-
-## Uncomment this if the package has a setup.py. This macro ensures
-## modules and global scripts declared therein get installed
-## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-# catkin_python_setup()
 
 ## Generate messages in the 'msg' folder
 # add_message_files(
@@ -46,6 +44,7 @@ find_package(VISP REQUIRED
 
 ## Generate actions in the 'action' folder
 add_action_files(
+  DIRECTORY action
   FILES
     CamDetection.action
 )
@@ -53,6 +52,7 @@ add_action_files(
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
   DEPENDENCIES
+    actionlib_msgs
     geometry_msgs
     std_msgs
     nav_msgs
@@ -68,7 +68,7 @@ generate_messages(
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES mir_vision
-  CATKIN_DEPENDS actionlib geometry_msgs message_runtime nav_msgs roscpp rospy std_msgs tf2 tf2_ros
+  CATKIN_DEPENDS actionlib actionlib_msgs geometry_msgs message_runtime nav_msgs roslib roscpp rospy std_msgs tf2 tf2_ros
 #  DEPENDS system_lib
 )
 
@@ -77,9 +77,10 @@ catkin_package(
 ###########
 ## Specify additional locations of header files
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${VISP_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
  # ${realsense2_INCLUDE_DIRS}
 )
 
@@ -94,9 +95,15 @@ include_directories(
 ## Declare a C++ executable
 # add_executable( image_display ${sample_dir}tutorial-image-display.cpp )
 # add_executable( broadcaster ${sample_dir}broadcaster_test.cpp )
-add_executable( detection ${sample_dir}detection.cpp )
-add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-realsense.cpp )
-add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
+# add_executable( detection ${sample_dir}detection.cpp )
+# add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-realsense.cpp )
+# add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
+add_executable( client ${sample_dir}ActionClient.cpp )
+add_executable( detection_server ${sample_dir}ActionServer.cpp )
+add_dependencies(
+  client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(
+  detection_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -113,12 +120,15 @@ add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
 # )
 # target_link_libraries(image_display ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 # target_link_libraries(broadcaster ${catkin_LIBRARIES} )
-target_link_libraries(detection ${catkin_LIBRARIES} ${VISP_LIBRARIES})
-target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} )
-target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+# target_link_libraries(detection ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+# target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} )
+# target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+target_link_libraries(client ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+target_link_libraries(detection_server ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 
 # copy the needed Data/model files
-visp_copy_dir(detection.cpp "${CMAKE_CURRENT_SOURCE_DIR}" model)
+# visp_copy_dir(detection.cpp "${CMAKE_CURRENT_SOURCE_DIR}" model)
+visp_copy_dir(detection_server "${CMAKE_CURRENT_SOURCE_DIR}" model)
 
 
 

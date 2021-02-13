@@ -31,9 +31,11 @@
 
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>roslib</depend>
   <depend>roscpp</depend>
   <depend>rospy</depend>
   <depend>actionlib</depend>
+  <depend>actionlib_msgs</depend>
   <depend>std_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>	
