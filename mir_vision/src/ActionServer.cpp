@@ -59,6 +59,22 @@ public:
 
     }
 
+    std::string parent_frame, child_frame;
+    std::string config_color, config_depth;
+    std::string model_color, model_depth;
+    std::string init_file;
+    std::string learning_data;
+    bool use_ogre;
+    bool use_scanline;
+    bool use_edges;
+    bool use_klt;
+    bool use_depth;
+    bool learn;
+    bool auto_init;
+    bool display_projection_error;
+    bool broadcast_transform;
+    double proj_error_threshold;
+
 };
 
 void broadcast_transformation(const std::string parent_frame, const std::string child_frame, const vpQuaternionVector& q, const vpTranslationVector& translation) 
@@ -112,21 +128,7 @@ void execute(const mir_vision::CamDetectionGoalConstPtr& goal, Server* as)  // N
     double proj_error_threshold = 25;
 
 
-    // std::string parent_frame, child_frame;
-    // std::string config_color, config_depth;
-    // std::string model_color, model_depth;
-    // std::string init_file;
-    // std::string learning_data;
-    // bool use_ogre;
-    // bool use_scanline;
-    // bool use_edges;
-    // bool use_klt;
-    // bool use_depth;
-    // bool learn;
-    // bool auto_init;
-    // bool display_projection_error;
-    // bool broadcast_transform;
-    // double proj_error_threshold;
+
 
     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
     // Get Params

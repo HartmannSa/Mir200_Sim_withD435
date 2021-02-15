@@ -10,14 +10,14 @@ int main(int argc, char** argv)
   client.waitForServer();
 
   mir_vision::CamDetectionGoal goal;
-  goal.object_name = "Objekt";
+  goal.object_name = "Teabox";
   goal.max_time = 200;
   client.sendGoal(goal);
 
   client.waitForResult(ros::Duration(5.0));
 
   if (client.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-    printf("Yay! Object found");
+    printf("Yay! %s found\n", goal.object_name);
   printf("Current State: %s\n", client.getState().toString().c_str());
   return 0;
 }

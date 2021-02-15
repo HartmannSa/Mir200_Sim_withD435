@@ -98,10 +98,10 @@ include_directories(
 # add_executable( detection ${sample_dir}detection.cpp )
 # add_executable( rgbd_tracker ${sample_dir}tutorial-mb-generic-tracker-rgbd-realsense.cpp )
 # add_executable( tutorial-viewer ${sample_dir}tutorial-grabber-realsense.cpp )
-add_executable( client ${sample_dir}ActionClient.cpp )
+add_executable( detection_client ${sample_dir}ActionClient.cpp )
 add_executable( detection_server ${sample_dir}ActionServer.cpp )
 add_dependencies(
-  client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+  detection_client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(
   detection_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -123,7 +123,7 @@ add_dependencies(
 # target_link_libraries(detection ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 # target_link_libraries(rgbd_tracker ${catkin_LIBRARIES} ${VISP_LIBRARIES} )
 # target_link_libraries(tutorial-viewer ${catkin_LIBRARIES} ${VISP_LIBRARIES})
-target_link_libraries(client ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+target_link_libraries(detection_client ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 target_link_libraries(detection_server ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 
 # copy the needed Data/model files
