@@ -6,7 +6,7 @@ typedef actionlib::SimpleActionClient<mir_vision::CamDetectionAction> Client;
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "detection_client");
-  Client client("detect_object", true); // true -> don't need ros::spin()
+  Client client("detection", true); // true -> don't need ros::spin()
   client.waitForServer();
 
   mir_vision::CamDetectionGoal goal;

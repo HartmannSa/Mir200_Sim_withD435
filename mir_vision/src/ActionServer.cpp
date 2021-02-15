@@ -32,8 +32,34 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+typedef actionlib::SimpleActionServer<mir_vision::CamDetectionAction> Server; 
 
-typedef actionlib::SimpleActionServer<mir_vision::CamDetectionAction> Server;
+class CamDetectionAction
+{
+protected:
+    ros::NodeHandle nh_;
+    actionlib::SimpleActionServer<mir_vision::CamDetectionAction> server_;
+    std::string action_name_;
+    mir_vision::CamDetectionFeedback feedback_;
+    mir_vision::CamDetectionResult result_;
+public:
+    CamDetectionAction(std::string name):
+        server_(nh_, name, boost::bind(&CamDetectionAction::executeCB, this, _1), false),
+        action_name_(name)
+    {
+        server_.start();
+    }
+
+    ~CamDetectionAction(void) {}
+
+    void executeCB(const mir_vision::CamDetectionGoalConstPtr &goal)
+    {
+        ROS_INFO("Test Class");
+        server_.setSucceeded(result_);
+
+    }
+
+};
 
 void broadcast_transformation(const std::string parent_frame, const std::string child_frame, const vpQuaternionVector& q, const vpTranslationVector& translation) 
 {
@@ -635,12 +661,13 @@ void execute(const mir_vision::CamDetectionGoalConstPtr& goal, Server* as)  // N
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "detection_server");
-    ros::NodeHandle nh;//("~");
+    // ros::NodeHandle nh;//("~");
     ROS_INFO("Detection node has been started");
 
-    Server server(nh, "detect_object", boost::bind(&execute, _1, &server), false);
-    server.start();
+    // Server server(nh, "detect_object", boost::bind(&execute, _1, &server), false);
+    // server.start();
 
+    CamDetectionAction detection("detection");
     ros::spin();
     return 0;
 }

@@ -10,4 +10,4 @@ float32 end_confidence
 #feedback
 int16 state
 float32 confidence
-geometry_msgs/PoseStamped estimate_pose
+geometry_msgs/PoseStamped estimated_pose
