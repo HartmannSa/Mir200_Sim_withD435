@@ -23,8 +23,8 @@
     <param name="proj_error_threshold"      type="double" value="25" />
   </node>
 
-  <node pkg="mir_vision" type="detection_client" name="detection_client" output="screen" >    
-
+  <node pkg="mir_vision" type="detection_client" name="detection_client" output="screen" > 
+    <param name="path_searchposes"          type="str"    value="$(find mir_vision)/config/searchPoses.config" /> 
   </node>
 
 </launch>
