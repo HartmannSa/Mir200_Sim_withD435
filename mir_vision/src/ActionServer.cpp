@@ -1,14 +1,17 @@
+// #define VISP_HAVE_REALSENSE2 true
+// #define VISP_HAVE_OPENCV true
+// #if defined(VISP_HAVE_REALSENSE2) && defined(VISP_HAVE_OPENCV)
 
 #include <mir_vision/CamDetectionAction.h>  // Note: "Action" is appended
 #include <actionlib/server/simple_action_server.h>
+#include <ros/ros.h>
+#include <ros/package.h>
+#include <boost/filesystem.hpp>         // in createTrainImages to create model folder
+
 #include <unistd.h>
-
-#define VISP_HAVE_REALSENSE2 true
-#define VISP_HAVE_OPENCV true
-#if defined(VISP_HAVE_REALSENSE2) && defined(VISP_HAVE_OPENCV)
 #include <iostream>
-#include <visp3/core/vpConfig.h>
 
+#include <visp3/core/vpConfig.h>
 #include <visp3/core/vpDisplay.h>
 #include <visp3/core/vpIoTools.h>
 #include <visp3/core/vpXmlParserCamera.h>
@@ -17,11 +20,12 @@
 #include <visp3/gui/vpDisplayOpenCV.h>
 #include <visp3/mbt/vpMbGenericTracker.h>
 #include <visp3/sensor/vpRealSense2.h>
-#include <visp3/vision/vpKeyPoint.h>
+#include <visp3/vision/vpKeyPoint.h>        // vpKeyPoint
+#include <visp/vpImage.h>
+#include <visp/vpImageIo.h>
 
 
-#include <ros/ros.h>
-#include <ros/package.h>
+
 #include <tf2/LinearMath/Quaternion.h>
 #include <std_msgs/String.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -39,83 +43,378 @@ class CamDetectionAction
 protected:
     ros::NodeHandle n_;
     actionlib::SimpleActionServer<mir_vision::CamDetectionAction> server_;
-    std::string action_name_;
     mir_vision::CamDetectionFeedback feedback_;
     mir_vision::CamDetectionResult result_;
+
+    std::string path_package;       // path to package mir_vision (starting in catkin_ws)
+    bool verbose;
+
+    // Camera Settings
+    vpRealSense2 realsense;
+    vpCameraParameters cam_color, cam_depth; 
+    vpImage<vpRGBa> I_color; 
+    vpImage<unsigned char> I_gray, I_depth, I_matches, I_train;
+    vpImage<uint16_t> I_depth_raw; 
+    vpHomogeneousMatrix cMo;
+    vpHomogeneousMatrix depth_M_color;  
+
+    double start, looptime, fps_measured;
+    std::vector<double> times_vec;
+
+    std::string detectorName;
+    std::string extractorName;
+    std::string matcherName;  
+    std::string configurationFile;
+
+    int maxTrainImageNumber;  
     
 public:
     CamDetectionAction(std::string name):
-        server_(n_, name, boost::bind(&CamDetectionAction::executeCB, this, _1), false),
-        action_name_(name)
-    {
+        server_(n_, name, boost::bind(&CamDetectionAction::executeCB, this, _1), false)
+    {        
         server_.start();
-        // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-        // Get Params
-        // ---------------------------------------------------------------------------------------------------------------------------------------------------------- 
         ros::NodeHandle nh("~");
-        nh.param<std::string>("parent_frame", parent_frame, "camera_arm_color_optical_frame");
-        nh.param<std::string>("child_frame", child_frame, "object");
-        nh.param<std::string>("config_color", config_color, "");
-        nh.param<std::string>("config_depth", config_depth, "");
-        nh.param<std::string>("model_color", model_color, "");
-        nh.param<std::string>("model_depth", model_depth, "");
-        nh.param<std::string>("init_file", init_file, "");
-        nh.param<std::string>("learning_data", learning_data, "learning/data-learned.bin");  
-        nh.param<bool>("use_ogre", use_ogre, false);
-        nh.param<bool>("use_scanline", use_scanline, false);
-        nh.param<bool>("use_edges", use_edges, true);
-        nh.param<bool>("use_klt", use_klt, true);
-        nh.param<bool>("use_depth", use_depth, true);
-        nh.param<bool>("learn", learn, false);
-        nh.param<bool>("auto_init", auto_init, false);
-        nh.param<bool>("display_projection_error", display_projection_error, false);
-        nh.param<bool>("broadcast_transform", broadcast_transform, true);
-        nh.param<double>("proj_error_threshold", proj_error_threshold, 25);
-        if (model_depth.empty()) {
-            model_depth = model_color;
-        }
-        std::string parentname = vpIoTools::getParent(model_color);
-        if (config_color.empty()) {
-            config_color = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".xml";
-        }
-        if (config_depth.empty()) {
-            config_depth = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + "_depth.xml";
-        }
-        if (init_file.empty()) {
-            init_file = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".init";
-        }
-        std::cout << "Tracked features: " << std::endl;
-        std::cout << "  Use edges   : " << use_edges << std::endl;
-        std::cout << "  Use klt     : " << use_klt << std::endl;
-        std::cout << "  Use depth   : " << use_depth << std::endl;
-        std::cout << "Tracker options: " << std::endl;
-        std::cout << "  Use ogre    : " << use_ogre << std::endl;
-        std::cout << "  Use scanline: " << use_scanline << std::endl;
-        std::cout << "  Proj. error : " << proj_error_threshold << std::endl;
-        std::cout << "  Display proj. error: " << display_projection_error << std::endl;
-        std::cout << "Config files: " << std::endl;
-        std::cout << "  Config color: " << "\"" << config_color << "\"" << std::endl;
-        std::cout << "  Config depth: " << "\"" << config_depth << "\"" << std::endl;
-        std::cout << "  Model color : " << "\"" << model_color << "\"" << std::endl;
-        std::cout << "  Model depth : " << "\"" << model_depth << "\"" << std::endl;
-        std::cout << "  Init file   : " << "\"" << init_file << "\"" << std::endl;
-        std::cout << "Learning options   : " << std::endl;
-        std::cout << "  Learn       : " << learn << std::endl;
-        std::cout << "  Auto init   : " << auto_init << std::endl;
-        std::cout << "  Learning data: " << learning_data << std::endl;
-        // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-       
-
+        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision/");
+        nh.param<bool>("verbose", verbose, true);
+        nh.param<int>("maxTrainImageNumber", maxTrainImageNumber, 10);
+        // nh.param<std::string>("parent_frame", parent_frame, "camera_arm_color_optical_frame");
+        // nh.param<std::string>("child_frame", child_frame, "object");
+        // nh.param<std::string>("config_color", config_color, "");
+        // nh.param<std::string>("config_depth", config_depth, "");
+        // nh.param<std::string>("model_color", model_color, path_package + "model/teabox/teabox.cao" );
+        // nh.param<std::string>("model_depth", model_depth, "");
+        // nh.param<std::string>("init_file", init_file, "");
+        // nh.param<std::string>("learning_data", learning_data, "learning/data-learned.bin");  
+        // nh.param<bool>("use_ogre", use_ogre, false);
+        // nh.param<bool>("use_scanline", use_scanline, false);
+        // nh.param<bool>("use_edges", use_edges, true);
+        // nh.param<bool>("use_klt", use_klt, true);
+        // nh.param<bool>("use_depth", use_depth, true);
+        // nh.param<bool>("learn", learn, false);
+        // nh.param<bool>("auto_init", auto_init, false);
+        // nh.param<bool>("display_projection_error", display_projection_error, false);
+        // nh.param<bool>("broadcast_transform", broadcast_transform, true);
+        // nh.param<double>("proj_error_threshold", proj_error_threshold, 25);
+        // std::string parentname = vpIoTools::getParent(model_color);
+        // if (model_depth.empty()) { model_depth = model_color;}        
+        // if (config_color.empty()) {
+        //     config_color = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".xml";
+        // }
+        // if (config_depth.empty()) {
+        //     config_depth = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + "_depth.xml";
+        // }
+        // if (init_file.empty()) {
+        //     init_file = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".init";
+        // }
+        // printSettings();
     }
 
     ~CamDetectionAction(void) {}
 
+    // void printSettings() 
+    // {
+    //     std::cout << "Tracked features: " << std::endl;
+    //     std::cout << "  Use edges   : " << use_edges << std::endl;
+    //     std::cout << "  Use klt     : " << use_klt << std::endl;
+    //     std::cout << "  Use depth   : " << use_depth << std::endl;
+    //     std::cout << "Tracker options: " << std::endl;
+    //     std::cout << "  Use ogre    : " << use_ogre << std::endl;
+    //     std::cout << "  Use scanline: " << use_scanline << std::endl;
+    //     std::cout << "  Proj. error : " << proj_error_threshold << std::endl;
+    //     std::cout << "  Display proj. error: " << display_projection_error << std::endl;
+    //     std::cout << "Config files: " << std::endl;
+    //     std::cout << "  Config color: " << "\"" << config_color << "\"" << std::endl;
+    //     std::cout << "  Config depth: " << "\"" << config_depth << "\"" << std::endl;
+    //     std::cout << "  Model color : " << "\"" << model_color << "\"" << std::endl;
+    //     std::cout << "  Model depth : " << "\"" << model_depth << "\"" << std::endl;
+    //     std::cout << "  Init file   : " << "\"" << init_file << "\"" << std::endl;
+    //     std::cout << "Learning options   : " << std::endl;
+    //     std::cout << "  Learn       : " << learn << std::endl;
+    //     std::cout << "  Auto init   : " << auto_init << std::endl;
+    //     std::cout << "  Learning data: " << learning_data << std::endl;        
+    // }
+
+    bool startCamera(int width, int height, int fps)
+    {   
+        // *** Configuration
+        rs2::config config;        
+        config.enable_stream(RS2_STREAM_COLOR, width, height, RS2_FORMAT_RGBA8, fps);
+        config.enable_stream(RS2_STREAM_DEPTH, width, height, RS2_FORMAT_Z16, fps);
+        depth_M_color.buildFrom(vpTranslationVector(-0.015,0,0), vpQuaternionVector(0,0,0,1));
+        // *** Try to open Camera
+        try { realsense.open(config);}
+        catch (const vpException &e) {
+            ROS_INFO("Catch an exception: %s", e.what());
+            ROS_INFO("Check if the Realsense camera is connected...");
+            return false;}
+        // *** Get and print Parameters
+        cam_color = realsense.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion); //perspectiveProjWithDistortion
+        cam_depth = realsense.getCameraParameters(RS2_STREAM_DEPTH, vpCameraParameters::perspectiveProjWithoutDistortion);
+        if (verbose){
+            ROS_INFO("Sensor internal camera parameters for color camera: ");
+            ROS_INFO("  px = %f \t py = %f", cam_color.get_px(), cam_color.get_py());
+            ROS_INFO("  u0 = %f \t v0 = %f", cam_color.get_u0(), cam_color.get_v0());
+            ROS_INFO("  kud = %f \t kdu = %f", cam_color.get_kud(), cam_color.get_kdu());
+            ROS_INFO("Sensor internal camera parameters for depth camera: " );
+            ROS_INFO("  px = %f \t py = %f", cam_depth.get_px(), cam_depth.get_py());
+            ROS_INFO("  u0 = %f \t v0 = %f", cam_depth.get_u0(), cam_depth.get_v0());
+            ROS_INFO("  kud = %f \t kdu = %f", cam_depth.get_kud(), cam_depth.get_kdu());
+        }        
+        // *** Resize images
+        I_color.resize(height, width);
+        I_gray.resize(height, width);
+        I_depth.resize(height, width);
+        I_depth_raw.resize(height, width);
+        I_matches.resize(height, 2*width); 
+        return true;       
+    }
+
+    void setDetectionSettings(std::string name, vpKeyPoint& keypoint)
+    {
+        if (name == "ORB"){
+            detectorName = name;    // "FAST"
+            extractorName = name;
+            matcherName = "BruteForce-Hamming";
+            configurationFile ="detection-config.xml";
+        }
+        if (name == "SIFT" || "SURF"){
+            detectorName = name;
+            extractorName = name;
+            matcherName = "FlannBased"; // "BruteForce"
+            configurationFile ="detection-config-" + name + ".xml";
+        }  
+        keypoint.setDetector(detectorName);
+        keypoint.setExtractor(extractorName);
+        keypoint.setMatcher(matcherName);
+        keypoint.setFilterMatchingType(vpKeyPoint::ratioDistanceThreshold);               
+    }
+
+    void createLearnImages(bool gray, bool depth, bool keypoints, std::string filename, std::string feature = "ORB", bool replaceLast=false){
+        startCamera(640, 480, 30);
+        vpDisplayOpenCV d_c, d_g, d_d;
+        d_c.init(I_color,100, 50, "Color Stream"); 
+        if (gray)  {d_g.init(I_gray,100+I_color.getWidth()+10, 50, "Gray Stream"); }
+        if (depth) {d_d.init(I_depth,100, 50 + I_color.getHeight()+10, "Depth Stream"); }
+
+        while (true) 
+        {            
+            realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);   
+            
+            vpDisplay::display(I_color);
+            vpDisplay::displayText(I_color, 20, 20, "Click to save current image.", vpColor::red);
+            vpDisplay::flush(I_color);
+            if (vpDisplay::getClick(I_color, false)) {
+                break;
+            }
+            
+            if (gray) {            
+                vpImageConvert::convert(I_color, I_gray);
+                vpDisplay::display(I_gray);
+                vpDisplay::displayText(I_gray, 20, 20, "Click to save current image.", vpColor::red);
+                vpDisplay::flush(I_gray);
+                if (vpDisplay::getClick(I_gray, false)) {
+                    break;
+                }
+            }            
+            if(depth) {
+                vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
+                vpDisplay::display(I_depth);
+                vpDisplay::displayText(I_depth, 20, 20, "Click to save current image.", vpColor::red);
+                vpDisplay::flush(I_depth);
+                if (vpDisplay::getClick(I_depth, false)) {
+                    break;
+                }
+            }          
+        }
+
+        // *** Create folder       
+        std::string path = path_package + "model/" + filename + "/";        
+        boost::filesystem::create_directories(path);
+        
+        // *** Create Image/ Object name
+        int number = 0;
+        std::string objectname = path + filename;
+        std::string objectnameNumber;
+        std::string ext = "_color.jpeg";
+        for (number = 0; number < maxTrainImageNumber; number++)
+        {
+            if ( !vpIoTools::checkFilename(objectname + std::to_string(number) + ext) )
+            { 
+                if (replaceLast) {objectnameNumber = objectname + std::to_string(number-1); }
+                else {objectnameNumber = objectname + std::to_string(number);}              
+                break;
+            }
+        }
+        
+        vpImageIo::write(I_color, objectnameNumber + ext); 
+        if (gray)  { vpImageIo::write(I_gray,  objectnameNumber +"_gray.jpeg"); }
+        if (depth) { vpImageIo::write(I_depth, objectnameNumber +"_depth.jpeg"); }
+        ROS_INFO("Image(s) saved to: %s", path.c_str() );
+        d_g.close(I_gray);
+        d_d.close(I_depth);
+
+        if (keypoints) 
+        {  
+            // *** Tracker settings      
+            vpMbGenericTracker tracker(vpMbGenericTracker::EDGE_TRACKER);
+            bool usexml = false;
+            if (vpIoTools::checkFilename(objectname + ".xml")) {
+                tracker.loadConfigFile(objectname + ".xml");
+                tracker.getCameraParameters(cam_color);
+                usexml = true;
+            }
+            if (!usexml) {
+                vpMe me;
+                me.setMaskSize(5);
+                me.setMaskNumber(180);
+                me.setRange(8);
+                me.setThreshold(10000);
+                me.setMu1(0.5);
+                me.setMu2(0.5);
+                me.setSampleStep(4);
+                me.setNbTotalSample(300);
+                tracker.setMovingEdge(me);
+                // cam.initPersProjWithoutDistortion(839, 839, 325, 243);
+                tracker.setCameraParameters(cam_color);
+                tracker.setAngleAppear(vpMath::rad(70));
+                tracker.setAngleDisappear(vpMath::rad(80));
+                tracker.setNearClippingDistance(0.1);
+                tracker.setFarClippingDistance(100.0);
+                tracker.setClipping(tracker.getClipping() | vpMbtPolygon::FOV_CLIPPING);
+            }
+            tracker.setOgreVisibilityTest(false);
+            tracker.setDisplayFeatures(true);
+            if (vpIoTools::checkFilename(objectname + ".cao"))
+                tracker.loadModel(objectname + ".cao");
+            else if (vpIoTools::checkFilename(objectname + ".wrl"))
+                tracker.loadModel(objectname + ".wrl");        
+            tracker.initClick(I_color, objectnameNumber + ".init", true);
+            tracker.track(I_color);
+
+            // *** Keypoint settings
+            vpKeyPoint keypoint_learning;           
+            setDetectionSettings(feature, keypoint_learning);
+            if (usexml) { keypoint_learning.loadConfigFile(path + configurationFile); } 
+            // *** Detect keypoints on frame I_color
+            std::vector<cv::KeyPoint> trainKeyPoints;
+            double elapsedTime; 
+            keypoint_learning.detect(I_color, trainKeyPoints, elapsedTime);
+            
+            // *** Get Polygons and their vertex/corners (rois)
+            std::vector<vpPolygon> polygons;
+            std::vector<std::vector<vpPoint> > roisPt;
+            std::pair<std::vector<vpPolygon>, std::vector<std::vector<vpPoint> > > pair = tracker.getPolygonFaces(false);
+            polygons = pair.first;
+            roisPt = pair.second;
+            // *** Calculate HomogenousMatrix and the 3D coordinates of the keypoints
+            std::vector<cv::Point3f> points3f;
+            vpHomogeneousMatrix cMo;
+            tracker.getPose(cMo);
+            vpKeyPoint::compute3DForPointsInPolygons(cMo, cam_color, trainKeyPoints, polygons, roisPt, points3f);
+            // *** Save the Keypoints and their 3D coordingates in the keypoint and a file
+            keypoint_learning.buildReference(I_color, trainKeyPoints, points3f, true);      
+            keypoint_learning.saveLearningData(objectnameNumber + "_learning_data.bin", true, false);
+            
+            // *** Display the learned and saved Keypoints
+            vpDisplay::display(I_color);
+            for (std::vector<cv::KeyPoint>::const_iterator it = trainKeyPoints.begin(); it != trainKeyPoints.end(); ++it) {
+                vpDisplay::displayCross(I_color, (int)it->pt.y, (int)it->pt.x, 4, vpColor::red);
+            }
+            vpDisplay::displayText(I_color, 10, 10, "Learning step: keypoints are detected on visible teabox faces", vpColor::red);
+            vpDisplay::displayText(I_color, 30, 10, "Click to close this display...", vpColor::red);
+            vpDisplay::flush(I_color);
+            vpDisplay::getClick(I_color, true);
+        }
+    }
+
     void executeCB(const mir_vision::CamDetectionGoalConstPtr &goal)
     {
         bool success = true;
-        while(server_.isActive())
-        {
+        bool usexml = false;
+        double error;
+        double elapsedTime;
+        std::string path = path_package + "model/" + goal->object_name + "/";
+        // if (!use_edges && !use_klt && !use_depth) {
+        //     std::cout << "You must choose at least one visual features between edge, KLT and depth." << std::endl;
+        //     server_.setPreempted();
+        //     success = false;
+        // }
+        // if (config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()) {
+        //     std::cout << "config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()" << std::endl;
+        //     server_.setPreempted();
+        //     success = false;
+        // }
+        
+        // *** Start camera and check if this worked
+        int width = 640, height = 480, fps = 30;
+        success = startCamera(width, height, fps); 
+        if (!success) {server_.setPreempted();}       
+        // *** Read train image as reference
+        // vpImageIo::read(I_train, path_package + "model/" + goal->object_name + "/" + goal->object_name + "_gray.jpeg");
+        // *** Init Displays and insert images
+        vpDisplayOpenCV d_c, d_g, d_d, d_matches;
+        unsigned int _posx = 100, _posy = 50;        
+        d_g.init(       I_gray,  _posx,                         _posy,                          "Color stream");
+        // d_d.init(       I_depth, _posx + I_gray.getWidth()+10,  _posy,                          "Depth stream");
+        // d_matches.init(I_matches,_posx,                         _posy + I_gray.getHeight()+10,  "Matching Keypoints");    
+        // I_matches.insert(I_train, vpImagePoint(0, 0));
+        // I_matches.insert(I_gray, vpImagePoint(0, I_train.getWidth()));
+        
+        // *** Tracker settings
+        vpMbGenericTracker tracker(vpMbGenericTracker::EDGE_TRACKER);
+        if (vpIoTools::checkFilename(path + goal->object_name + ".xml")) {
+            tracker.loadConfigFile(path + goal->object_name + ".xml");
+            tracker.getCameraParameters(cam_color);
+            usexml = true;
+        } 
+        if (!usexml) {
+            vpMe me;
+            me.setMaskSize(5);
+            me.setMaskNumber(180);
+            me.setRange(8);
+            me.setThreshold(10000);
+            me.setMu1(0.5);
+            me.setMu2(0.5);
+            me.setSampleStep(4);
+            me.setNbTotalSample(250);
+            tracker.setMovingEdge(me);
+            // cam.initPersProjWithoutDistortion(839, 839, 325, 243);
+            tracker.setCameraParameters(cam_color);
+            tracker.setAngleAppear(vpMath::rad(70));
+            tracker.setAngleDisappear(vpMath::rad(80));
+            tracker.setNearClippingDistance(0.1);
+            tracker.setFarClippingDistance(100.0);
+            tracker.setClipping(tracker.getClipping() | vpMbtPolygon::FOV_CLIPPING);
+        }
+        tracker.setOgreVisibilityTest(false);
+        tracker.setDisplayFeatures(true);
+        if (vpIoTools::checkFilename(path + goal->object_name + ".cao"))
+            tracker.loadModel(path + goal->object_name + ".cao");
+        else if (vpIoTools::checkFilename(path + goal->object_name + ".wrl"))
+            tracker.loadModel(path + goal->object_name + ".wrl");
+        // tracker.initClick(I, objectname + ".init", true);
+        // tracker.track(I);
 
+        // *** Set detector, extractor and matcher
+        vpKeyPoint keypoint;
+        setDetectionSettings("SURF", keypoint);
+        if (usexml) {
+            keypoint.loadConfigFile(path + configurationFile);
+        } else {            
+            keypoint.setMatchingRatioThreshold(0.8);
+            keypoint.setUseRansacVVS(true);
+            keypoint.setUseRansacConsensusPercentage(true);
+            keypoint.setRansacConsensusPercentage(20.0);
+            keypoint.setRansacIteration(200);
+            keypoint.setRansacThreshold(0.005);
+        }
+        keypoint.loadLearningData(path + "Teabox2_learning_data.bin", true);    // true for binary mode   
+        // ROS_INFO("Reference keypoints = %i", keypoint.buildReference(I_train) );
+
+        // *** Detection Loop
+        while(server_.isActive() && success)
+        {
+            start = vpTime::measureTimeMs();
             if (server_.isPreemptRequested() || !ros::ok())
             {
                 ROS_INFO("Preempted");
@@ -124,33 +423,66 @@ public:
                 break;
             }
         
-            for(int i=1; i<5; i++)
-            {
-                feedback_.state = i;
-                server_.publishFeedback(feedback_);
-                ROS_INFO("state %i", i);
-                ros::Duration(3).sleep();
-            }
-        }        
-        // if (!use_edges && !use_klt && !use_depth) {
-        //     std::cout << "You must choose at least one visual features between edge, KLT and depth." << std::endl;
-        //     // return EXIT_FAILURE;
-        //     server_.setPreempted();
-        // }
+            // for(int i=1; i<5; i++)
+            // {
+            //     feedback_.state = i;
+            //     server_.publishFeedback(feedback_);
+            //     ROS_INFO("state %i", i);
+            //     ros::Duration(3).sleep();
+            // }
+            
+            // *** Aquire frames and display them
+            realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
+            vpImageConvert::convert(I_color, I_gray);
+            vpDisplay::display(I_gray);
+            vpDisplay::displayText(I_gray, 10, 10, "Detection and localization in process...", vpColor::red);
+            
+            if (keypoint.matchPoint(I_gray, cam_color, cMo, error, elapsedTime)) {
+                ROS_INFO("Error: %f", error);
+                tracker.setPose(I_gray, cMo);
+                tracker.display(I_gray, cMo, cam_color, vpColor::red, 2);
+                vpDisplay::displayFrame(I_gray, cMo, cam_color, 0.025, vpColor::none, 3);
+            }            
+            vpDisplay::flush(I_gray);
+            // I_matches.insert(I_gray, vpImagePoint(0, I_train.getWidth()));
+            // vpDisplay::display(I_matches);
+            // vpDisplay::displayLine(I_matches, vpImagePoint(0, I_train.getWidth()), 
+            //             vpImagePoint(I_train.getHeight(), I_train.getWidth()), vpColor::white, 2);              
+            
+            // if (use_depth) {
+            //     vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
+            //     vpDisplay::display(I_depth);
+            //     vpDisplay::flush(I_depth);
+            // }
 
-        // if (config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()) {
-        //     std::cout << "config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()" << std::endl;
-        //     // return EXIT_FAILURE;
-        //     server_.setPreempted();
-        // }
-        
+            // unsigned int nbMatch = keypoint.matchPoint(I_gray);     // I_gray is matched with reference image
+            // ROS_INFO("Matches = %i", nbMatch);
+            // vpImagePoint iPref, iPcur;
+            // for (unsigned int i = 0; i < nbMatch; i++) {
+            //     keypoint.getMatchedPoints(i, iPref, iPcur);
+            //     vpDisplay::displayLine(I_matches, iPref, iPcur + vpImagePoint(0, I_train.getWidth()), vpColor::green);
+            // }
+            // vpDisplay::flush(I_matches);
+
+
+        looptime = vpTime::measureTimeMs() - start;
+        times_vec.push_back(looptime);
+        fps_measured = 1/looptime;
+        }  
+
         if (success)
         {
             ROS_INFO("Execute successfully done!");
             server_.setSucceeded(result_);
         }
 
+
         ROS_INFO("Execute finished!");
+        if (!times_vec.empty() && verbose) 
+        {
+        std::cout << "\nProcessing time, Mean: " << vpMath::getMean(times_vec) << " ms ; Median: " << vpMath::getMedian(times_vec)
+                << " ; Std: " << vpMath::getStdev(times_vec) << " ms" << std::endl;
+        }     
     }
 
     std::string parent_frame, child_frame;
@@ -169,8 +501,7 @@ public:
     bool broadcast_transform;
     double proj_error_threshold;
     vpQuaternionVector q;
-    vpTranslationVector translation;    
-
+    vpTranslationVector translation;  
 };
 
 void broadcast_transformation(const std::string parent_frame, const std::string child_frame, const vpQuaternionVector& q, const vpTranslationVector& translation) 
@@ -191,103 +522,18 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
   transformStamped.transform.rotation.w = q.w();
 
   br.sendTransform(transformStamped);
-
 }
 
 
 // void execute(const mir_vision::CamDetectionGoalConstPtr& goal, Server* as)  // Note: "Action" is not appended here
-// {
-    
+// {    
 //     q[0] = 0;
 //     q[1] = 1;
 //     q[2] = 0;
-//     q[3] = 0;
-      
-
+//     q[3] = 0;      
 //     // if (broadcast_transform) {
 //     //     ros::init(argc, argv, "cam_object_broadcaster");
 //     // }
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
- 
-  
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     // Define and start Camera 
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     vpRealSense2 realsense;
-//     int width = 640, height = 480;
-//     int fps = 30;
-//     rs2::config config;
-//     config.enable_stream(RS2_STREAM_COLOR, width, height, RS2_FORMAT_RGBA8, fps);
-//     config.enable_stream(RS2_STREAM_DEPTH, width, height, RS2_FORMAT_Z16, fps);
-
-//     try {
-//         realsense.open(config);
-//     }
-//     catch (const vpException &e) {
-//         std::cout << "Catch an exception: " << e.what() << std::endl;
-//         std::cout << "Check if the Realsense camera is connected..." << std::endl;
-//         //return EXIT_SUCCESS;
-//         as->setPreempted();
-//     }
-
-//     vpCameraParameters cam_color = realsense.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion); //perspectiveProjWithDistortion
-//     vpCameraParameters cam_depth = realsense.getCameraParameters(RS2_STREAM_DEPTH, vpCameraParameters::perspectiveProjWithoutDistortion);
-//     std::cout << "Sensor internal camera parameters for color camera: " << cam_color << std::endl;
-//     std::cout << "Sensor internal camera parameters for depth camera: " << cam_depth << std::endl;
-
-//     vpImage<vpRGBa> I_color(height, width);
-//     vpImage<unsigned char> I_gray(height, width);
-//     vpImage<unsigned char> I_depth(height, width);
-//     vpImage<uint16_t> I_depth_raw(height, width);
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-    
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     // Define Displays for the grey frame (I_grey) and/or depth frame (I_depth)
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     #ifdef VISP_HAVE_X11
-//         vpDisplayX d1, d2;
-//     #elif defined(VISP_HAVE_GDI)
-//         vpDisplayGDI d1, d2;
-//     #elif defined(VISP_HAVE_OPENCV)
-//         vpDisplayOpenCV d1, d2;
-//     #endif
-
-//     unsigned int _posx = 100, _posy = 50;
-
-//     if (use_edges || use_klt)
-//         d1.init(I_gray, _posx, _posy, "Color stream");
-//     if (use_depth)
-//         d2.init(I_depth, _posx + I_gray.getWidth()+10, _posy, "Depth stream");
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-    
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     // FIRST LOOP - Click when ready
-//     // Stream color/grey and depth image UNTIL user clicks into image (for tracker initialization)
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-//     while (true) {
-//         realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
-
-//         if (use_edges || use_klt) {
-//             vpImageConvert::convert(I_color, I_gray);
-//             vpDisplay::display(I_gray);
-//             vpDisplay::displayText(I_gray, 20, 20, "Click when ready.", vpColor::red);
-//             vpDisplay::flush(I_gray);
-//             if (vpDisplay::getClick(I_gray, false)) {
-//                 break;
-//             }
-//         }
-//         if (use_depth) {
-//             vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
-//             vpDisplay::display(I_depth);
-//             vpDisplay::displayText(I_depth, 20, 20, "Click when ready.", vpColor::red);
-//             vpDisplay::flush(I_depth);
-//             if (vpDisplay::getClick(I_depth, false)) {
-//                 break;
-//             }
-//         }
-//     }
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
-    
 //     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
 //     //  TRACKER settings 
 //     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -298,10 +544,8 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //         trackerTypes.push_back(vpMbGenericTracker::EDGE_TRACKER );
 //     else if (use_klt)
 //         trackerTypes.push_back(vpMbGenericTracker::KLT_TRACKER);
-
 //     if (use_depth)
-//         trackerTypes.push_back(vpMbGenericTracker::DEPTH_DENSE_TRACKER);
-    
+//         trackerTypes.push_back(vpMbGenericTracker::DEPTH_DENSE_TRACKER);    
 //     vpMbGenericTracker tracker(trackerTypes);
 
 //     // In Case 2 camera frames are used (color and depth) maps need to be defined
@@ -335,13 +579,11 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //         tracker.loadModel(model_depth);
 //         tracker.setCameraParameters(cam_depth);
 //     }
-
 //     tracker.setDisplayFeatures(true);
 //     tracker.setOgreVisibilityTest(use_ogre);
 //     tracker.setScanLineVisibilityTest(use_scanline);
 //     tracker.setProjectionErrorComputation(true);
 //     tracker.setProjectionErrorDisplay(display_projection_error);
-//     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
     
 //     // ----------------------------------------------------------------------------------------------------------------------------------------------------------
 //     //  DETECTOR, EXTRACTOR, MATCHER settings
@@ -672,18 +914,22 @@ int main(int argc, char** argv)
     // server.start();
 
     CamDetectionAction detection("detection");
+    // detection.createLearnImages(true, true, true, "Teabox", "ORB");
+    // detection.createLearnImages(true, true, true, "Teabox", "SIFT");
+    // detection.createLearnImages(true, true, true, "Teabox", "SURF");
+
     ros::spin();
     return 0;
 }
 
-#elif defined(VISP_HAVE_REALSENSE2)
-    int main() {
-        std::cout << "Install OpenCV 3rd party, configure and build ViSP again to use this example" << std::endl;
-        return 0;
-    }
-#else
-    int main() {
-        std::cout << "Install librealsense2 3rd party, configure and build ViSP again to use this example" << std::endl;
-        return 0;
-    }
-#endif
+// #elif defined(VISP_HAVE_REALSENSE2)
+//     int main() {
+//         std::cout << "Install OpenCV 3rd party, configure and build ViSP again to use this example" << std::endl;
+//         return 0;
+//     }
+// #else
+//     int main() {
+//         std::cout << "Install librealsense2 3rd party, configure and build ViSP again to use this example" << std::endl;
+//         return 0;
+//     }
+// #endif 

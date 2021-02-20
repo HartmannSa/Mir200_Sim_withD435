@@ -1,4 +1,4 @@
-#include <mir_vision/CamDetectionAction.h> // Note: "Action" is appended
+#include <mir_vision/CamDetectionAction.h> 
 #include <actionlib/client/simple_action_client.h>
 
 #include <ros/ros.h>
@@ -13,6 +13,10 @@
 typedef actionlib::SimpleActionClient<mir_vision::CamDetectionAction> DetectionClient;
 typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
 
+
+// """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""//
+//  CLASS CamDetectionClient                                                                                         //
+// """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""" //
 class CamDetectionClient
 {
 private:
@@ -22,11 +26,13 @@ private:
   MoveBaseClient client_move;
   move_base_msgs::MoveBaseGoal move_goal;
   geometry_msgs::PoseArray posearray;
-  // geometry_msgs::Pose p0, p1, p2, p3;
   int move_goal_number;
   bool reached_end_of_searchpath;
 
 public:
+  // ------------------------------------------------------ //
+  //  Konstruktor und Destruktor                            //
+  // ------------------------------------------------------ //   
   CamDetectionClient() : client_detect("detection", true), 
                         client_move("move_base", true)
   {
@@ -37,6 +43,9 @@ public:
 
   ~CamDetectionClient() {}
   
+  // ------------------------------------------------------ //
+  //  DetectObject ("Main Funktion")                        //
+  // ------------------------------------------------------ //
   void detectObject(std::string objekt_name, int max_time, std::string path_poses)
   {    
     move_goal_number = 0;
@@ -51,65 +60,9 @@ public:
                     boost::bind(&CamDetectionClient::feedbackCb, this, _1));     
   }
 
-  void doneCb(const actionlib::SimpleClientGoalState& state,
-              const mir_vision::CamDetectionResultConstPtr& result)
-  {
-    ROS_INFO("Finished in state [%s]", state.toString().c_str());
-    ros::shutdown();
-  }
-
-  void activeCb()
-  {
-    ROS_INFO("Goal just went active");
-    // init_search();
-
-    while(!client_move.waitForServer(ros::Duration(5.0))){
-      ROS_INFO("Waiting for the move_base action server to come up");
-    }
-
-    setMoveGoal(move_goal_number);
-    ROS_INFO("Sending goal number %i", move_goal_number);   
-    client_move.sendGoal(move_goal);
-    // client_move.waitForResult();
-  }
-
-  // void init_search()
-  // {
-    // posearray.header.stamp = ros::Time::now(); 
-    // posearray.header.frame_id = "map"; 
-    // // First search point
-    // p0.position.x = 3.7;
-    // p0.position.y = 1.6;
-    // p0.orientation.z = 0.016;
-    // p0.orientation.w = 0.999;
-    // posearray.poses.push_back(p0);
-    // // Second search point
-    // p1.position.x = 8.45;
-    // p1.position.y = 2.26;
-    // p1.orientation.z = 0.667;
-    // p1.orientation.w = 0.745;
-    // posearray.poses.push_back(p1);
-    // // Third search point
-    // p2.position.x = 5.56;
-    // p2.position.y = 4.3;
-    // p2.orientation.z = 0.9998;
-    // p2.orientation.w = -0.0223;
-    // posearray.poses.push_back(p2);
-    // // Fourth search point
-    // p3.position.x = -5.49;
-    // p3.position.y = 7.53;
-    // p3.orientation.z = 0.999;
-    // p3.orientation.w = 0.021;
-    // posearray.poses.push_back(p3);
-    // In case no special poses to search are selected, all possible search poses will be used
-    // if (poses_to_use=={}){
-    //   for (int i=0; i<posearray.poses.size(); i++){
-    //     poses_to_use.push_back(i);
-    //   }      
-    // }
-    // std::cout << "Poses to use" << poses_to_use << std::endl;
-  // }
-
+  // ------------------------------------------------------ //
+  //  Load Poses from config file                           //
+  // ------------------------------------------------------ //
   void loadPoses(std::string path)
   {
     std::ifstream file;    
@@ -147,14 +100,45 @@ public:
     } else ROS_INFO("Unable to open file %s", path.c_str() ); 
   }
 
-
+  // ------------------------------------------------------ //
+  //  Set a Goal for move_Base                              //
+  // ------------------------------------------------------ //
   void setMoveGoal(int goal_number, std::string frame = "map")
   {
     move_goal.target_pose.header.stamp = ros::Time::now(); 
     move_goal.target_pose.header.frame_id = frame;
     move_goal.target_pose.pose = posearray.poses[goal_number];
-  }     
+  }  
+
+  // ------------------------------------------------------ //
+  //  doneCallback                                          //
+  // ------------------------------------------------------ //
+  void doneCb(const actionlib::SimpleClientGoalState& state,
+              const mir_vision::CamDetectionResultConstPtr& result)
+  {
+    ROS_INFO("Finished in state [%s]", state.toString().c_str());
+    ros::shutdown();
+  }
+
+  // ------------------------------------------------------ //
+  //  activeCallback                                        //
+  // ------------------------------------------------------ //
+  void activeCb()
+  {
+    ROS_INFO("Goal just went active");
+
+    while(!client_move.waitForServer(ros::Duration(5.0))){
+      ROS_INFO("Waiting for the move_base action server to come up");
+    }
+
+    setMoveGoal(move_goal_number);
+    ROS_INFO("Sending goal number %i", move_goal_number);   
+    client_move.sendGoal(move_goal);
+  } 
   
+  // ------------------------------------------------------ //
+  //  feedbackCallback                                      //
+  // ------------------------------------------------------ //
   void feedbackCb(const mir_vision::CamDetectionFeedbackConstPtr& feedback)
   {
     ROS_INFO("Got Feedback with state %i", feedback->state);
@@ -179,19 +163,14 @@ public:
         ROS_INFO("Cancel detection Goal %s", detection_goal.object_name.c_str());   
       }
     }          
-    // switch ( feedback->state )
-    // {
-    //   case (feedback->state < 10):
-    //       break;
-    //   case (feedback->state < 20 ):
-    //       break;
-    //   default:
-    //       pass;
-    // }
   }
 };
 
 
+
+// """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""//
+//  MAIN                                                                                                             //
+// """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""" //
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "detection_client");
