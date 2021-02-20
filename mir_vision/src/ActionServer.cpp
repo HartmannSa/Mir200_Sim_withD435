@@ -65,8 +65,6 @@ protected:
     std::string extractorName;
     std::string matcherName;  
     std::string configurationFile;
-
-    int maxTrainImageNumber;  
     
 public:
     CamDetectionAction(std::string name):
@@ -187,144 +185,6 @@ public:
         keypoint.setExtractor(extractorName);
         keypoint.setMatcher(matcherName);
         keypoint.setFilterMatchingType(vpKeyPoint::ratioDistanceThreshold);               
-    }
-
-    void createLearnImages(bool gray, bool depth, bool keypoints, std::string filename, std::string feature = "ORB", bool replaceLast=false){
-        startCamera(640, 480, 30);
-        vpDisplayOpenCV d_c, d_g, d_d;
-        d_c.init(I_color,100, 50, "Color Stream"); 
-        if (gray)  {d_g.init(I_gray,100+I_color.getWidth()+10, 50, "Gray Stream"); }
-        if (depth) {d_d.init(I_depth,100, 50 + I_color.getHeight()+10, "Depth Stream"); }
-
-        while (true) 
-        {            
-            realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);   
-            
-            vpDisplay::display(I_color);
-            vpDisplay::displayText(I_color, 20, 20, "Click to save current image.", vpColor::red);
-            vpDisplay::flush(I_color);
-            if (vpDisplay::getClick(I_color, false)) {
-                break;
-            }
-            
-            if (gray) {            
-                vpImageConvert::convert(I_color, I_gray);
-                vpDisplay::display(I_gray);
-                vpDisplay::displayText(I_gray, 20, 20, "Click to save current image.", vpColor::red);
-                vpDisplay::flush(I_gray);
-                if (vpDisplay::getClick(I_gray, false)) {
-                    break;
-                }
-            }            
-            if(depth) {
-                vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
-                vpDisplay::display(I_depth);
-                vpDisplay::displayText(I_depth, 20, 20, "Click to save current image.", vpColor::red);
-                vpDisplay::flush(I_depth);
-                if (vpDisplay::getClick(I_depth, false)) {
-                    break;
-                }
-            }          
-        }
-
-        // *** Create folder       
-        std::string path = path_package + "model/" + filename + "/";        
-        boost::filesystem::create_directories(path);
-        
-        // *** Create Image/ Object name
-        int number = 0;
-        std::string objectname = path + filename;
-        std::string objectnameNumber;
-        std::string ext = "_color.jpeg";
-        for (number = 0; number < maxTrainImageNumber; number++)
-        {
-            if ( !vpIoTools::checkFilename(objectname + std::to_string(number) + ext) )
-            { 
-                if (replaceLast) {objectnameNumber = objectname + std::to_string(number-1); }
-                else {objectnameNumber = objectname + std::to_string(number);}              
-                break;
-            }
-        }
-        
-        vpImageIo::write(I_color, objectnameNumber + ext); 
-        if (gray)  { vpImageIo::write(I_gray,  objectnameNumber +"_gray.jpeg"); }
-        if (depth) { vpImageIo::write(I_depth, objectnameNumber +"_depth.jpeg"); }
-        ROS_INFO("Image(s) saved to: %s", path.c_str() );
-        d_g.close(I_gray);
-        d_d.close(I_depth);
-
-        if (keypoints) 
-        {  
-            // *** Tracker settings      
-            vpMbGenericTracker tracker(vpMbGenericTracker::EDGE_TRACKER);
-            bool usexml = false;
-            if (vpIoTools::checkFilename(objectname + ".xml")) {
-                tracker.loadConfigFile(objectname + ".xml");
-                tracker.getCameraParameters(cam_color);
-                usexml = true;
-            }
-            if (!usexml) {
-                vpMe me;
-                me.setMaskSize(5);
-                me.setMaskNumber(180);
-                me.setRange(8);
-                me.setThreshold(10000);
-                me.setMu1(0.5);
-                me.setMu2(0.5);
-                me.setSampleStep(4);
-                me.setNbTotalSample(300);
-                tracker.setMovingEdge(me);
-                // cam.initPersProjWithoutDistortion(839, 839, 325, 243);
-                tracker.setCameraParameters(cam_color);
-                tracker.setAngleAppear(vpMath::rad(70));
-                tracker.setAngleDisappear(vpMath::rad(80));
-                tracker.setNearClippingDistance(0.1);
-                tracker.setFarClippingDistance(100.0);
-                tracker.setClipping(tracker.getClipping() | vpMbtPolygon::FOV_CLIPPING);
-            }
-            tracker.setOgreVisibilityTest(false);
-            tracker.setDisplayFeatures(true);
-            if (vpIoTools::checkFilename(objectname + ".cao"))
-                tracker.loadModel(objectname + ".cao");
-            else if (vpIoTools::checkFilename(objectname + ".wrl"))
-                tracker.loadModel(objectname + ".wrl");        
-            tracker.initClick(I_color, objectnameNumber + ".init", true);
-            tracker.track(I_color);
-
-            // *** Keypoint settings
-            vpKeyPoint keypoint_learning;           
-            setDetectionSettings(feature, keypoint_learning);
-            if (usexml) { keypoint_learning.loadConfigFile(path + configurationFile); } 
-            // *** Detect keypoints on frame I_color
-            std::vector<cv::KeyPoint> trainKeyPoints;
-            double elapsedTime; 
-            keypoint_learning.detect(I_color, trainKeyPoints, elapsedTime);
-            
-            // *** Get Polygons and their vertex/corners (rois)
-            std::vector<vpPolygon> polygons;
-            std::vector<std::vector<vpPoint> > roisPt;
-            std::pair<std::vector<vpPolygon>, std::vector<std::vector<vpPoint> > > pair = tracker.getPolygonFaces(false);
-            polygons = pair.first;
-            roisPt = pair.second;
-            // *** Calculate HomogenousMatrix and the 3D coordinates of the keypoints
-            std::vector<cv::Point3f> points3f;
-            vpHomogeneousMatrix cMo;
-            tracker.getPose(cMo);
-            vpKeyPoint::compute3DForPointsInPolygons(cMo, cam_color, trainKeyPoints, polygons, roisPt, points3f);
-            // *** Save the Keypoints and their 3D coordingates in the keypoint and a file
-            keypoint_learning.buildReference(I_color, trainKeyPoints, points3f, true);      
-            keypoint_learning.saveLearningData(objectnameNumber + "_learning_data.bin", true, false);
-            
-            // *** Display the learned and saved Keypoints
-            vpDisplay::display(I_color);
-            for (std::vector<cv::KeyPoint>::const_iterator it = trainKeyPoints.begin(); it != trainKeyPoints.end(); ++it) {
-                vpDisplay::displayCross(I_color, (int)it->pt.y, (int)it->pt.x, 4, vpColor::red);
-            }
-            vpDisplay::displayText(I_color, 10, 10, "Learning step: keypoints are detected on visible teabox faces", vpColor::red);
-            vpDisplay::displayText(I_color, 30, 10, "Click to close this display...", vpColor::red);
-            vpDisplay::flush(I_color);
-            vpDisplay::getClick(I_color, true);
-        }
     }
 
     void executeCB(const mir_vision::CamDetectionGoalConstPtr &goal)
@@ -914,9 +774,6 @@ int main(int argc, char** argv)
     // server.start();
 
     CamDetectionAction detection("detection");
-    // detection.createLearnImages(true, true, true, "Teabox", "ORB");
-    // detection.createLearnImages(true, true, true, "Teabox", "SIFT");
-    // detection.createLearnImages(true, true, true, "Teabox", "SURF");
 
     ros::spin();
     return 0;
