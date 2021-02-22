@@ -46,13 +46,14 @@ public:
   // ------------------------------------------------------ //
   //  DetectObject ("Main Funktion")                        //
   // ------------------------------------------------------ //
-  void detectObject(std::string objekt_name, int max_time, std::string path_poses)
+  void detectObject(std::string objekt_name, std::string learning_data, int max_time, std::string path_poses)
   {    
     move_goal_number = 0;
     reached_end_of_searchpath = false;
     loadPoses(path_poses);
 
     detection_goal.object_name = objekt_name;
+    detection_goal.learning_data = learning_data;
     detection_goal.max_time = max_time;  
     client_detect.sendGoal(detection_goal, 
                     boost::bind(&CamDetectionClient::doneCb, this, _1, _2),
@@ -61,7 +62,7 @@ public:
   }
 
   // ------------------------------------------------------ //
-  //  Load Poses from config file                           //
+  //  Load search poses from config file                           //
   // ------------------------------------------------------ //
   void loadPoses(std::string path)
   {
@@ -166,8 +167,6 @@ public:
   }
 };
 
-
-
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""//
 //  MAIN                                                                                                             //
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""" //
@@ -176,10 +175,14 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "detection_client");
   ros::NodeHandle nh("~");
   std::string path;
+  std::string object_name;
+  std::string learning_data;
+  nh.param<std::string>("object_name", object_name, "Teabox");
+  nh.param<std::string>("learning_data", learning_data, "Teabox0_learning_data.bin");
   nh.param<std::string>("path_searchposes", path, "/home/rosmatch/visp-ws/src/Mir200_Sim_withD435/mir_vision/config/searchPoses.config");
   
   CamDetectionClient cam_detection_client;
-  cam_detection_client.detectObject("Teabox", 200, path);
+  cam_detection_client.detectObject(object_name, learning_data, 200, path);
   ros::spin();
   return 0;
 }

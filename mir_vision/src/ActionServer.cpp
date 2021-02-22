@@ -72,14 +72,13 @@ public:
     {        
         server_.start();
         ros::NodeHandle nh("~");
-        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision/");
+        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision");
         nh.param<bool>("verbose", verbose, true);
-        nh.param<int>("maxTrainImageNumber", maxTrainImageNumber, 10);
         // nh.param<std::string>("parent_frame", parent_frame, "camera_arm_color_optical_frame");
         // nh.param<std::string>("child_frame", child_frame, "object");
         // nh.param<std::string>("config_color", config_color, "");
         // nh.param<std::string>("config_depth", config_depth, "");
-        // nh.param<std::string>("model_color", model_color, path_package + "model/teabox/teabox.cao" );
+        // nh.param<std::string>("model_color", model_color, path_package + "/model/teabox/teabox.cao" );
         // nh.param<std::string>("model_depth", model_depth, "");
         // nh.param<std::string>("init_file", init_file, "");
         // nh.param<std::string>("learning_data", learning_data, "learning/data-learned.bin");  
@@ -193,7 +192,13 @@ public:
         bool usexml = false;
         double error;
         double elapsedTime;
-        std::string path = path_package + "model/" + goal->object_name + "/";
+        std::string objectName = goal->object_name;
+        std::string learningData = goal->learning_data;
+        bool binMode = ( learningData.rfind(".bin") != std::string::npos );
+        // bool binMode = ( learningData.substr(learningData.length() - 4) == ".bin" );
+
+
+        std::string path = path_package + "/model/" + objectName + "/";
         // if (!use_edges && !use_klt && !use_depth) {
         //     std::cout << "You must choose at least one visual features between edge, KLT and depth." << std::endl;
         //     server_.setPreempted();
@@ -210,7 +215,7 @@ public:
         success = startCamera(width, height, fps); 
         if (!success) {server_.setPreempted();}       
         // *** Read train image as reference
-        // vpImageIo::read(I_train, path_package + "model/" + goal->object_name + "/" + goal->object_name + "_gray.jpeg");
+        // vpImageIo::read(I_train, path_package + "/model/" + goal->object_name + "/" + goal->object_name + "_gray.jpeg");
         // *** Init Displays and insert images
         vpDisplayOpenCV d_c, d_g, d_d, d_matches;
         unsigned int _posx = 100, _posy = 50;        
@@ -222,8 +227,8 @@ public:
         
         // *** Tracker settings
         vpMbGenericTracker tracker(vpMbGenericTracker::EDGE_TRACKER);
-        if (vpIoTools::checkFilename(path + goal->object_name + ".xml")) {
-            tracker.loadConfigFile(path + goal->object_name + ".xml");
+        if (vpIoTools::checkFilename(path + objectName + ".xml")) {
+            tracker.loadConfigFile(path + objectName + ".xml");
             tracker.getCameraParameters(cam_color);
             usexml = true;
         } 
@@ -248,10 +253,10 @@ public:
         }
         tracker.setOgreVisibilityTest(false);
         tracker.setDisplayFeatures(true);
-        if (vpIoTools::checkFilename(path + goal->object_name + ".cao"))
-            tracker.loadModel(path + goal->object_name + ".cao");
-        else if (vpIoTools::checkFilename(path + goal->object_name + ".wrl"))
-            tracker.loadModel(path + goal->object_name + ".wrl");
+        if (vpIoTools::checkFilename(path + objectName + ".cao"))
+            tracker.loadModel(path + objectName + ".cao");
+        else if (vpIoTools::checkFilename(path + objectName + ".wrl"))
+            tracker.loadModel(path + objectName + ".wrl");
         // tracker.initClick(I, objectname + ".init", true);
         // tracker.track(I);
 
@@ -268,9 +273,11 @@ public:
             keypoint.setRansacIteration(200);
             keypoint.setRansacThreshold(0.005);
         }
-        keypoint.loadLearningData(path + "Teabox2_learning_data.bin", true);    // true for binary mode   
+        
+        ROS_INFO("%s", (path+learningData).c_str());
+        keypoint.loadLearningData(path + learningData, binMode);    // true for binary mode   
         // ROS_INFO("Reference keypoints = %i", keypoint.buildReference(I_train) );
-
+        ROS_INFO(".bin load successful");
         // *** Detection Loop
         while(server_.isActive() && success)
         {

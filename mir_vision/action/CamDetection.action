@@ -1,5 +1,6 @@
 #goal definition
 string object_name
+string learning_data
 float32 max_time
 ---
 #result definition

@@ -2,10 +2,11 @@
 <launch>
 
   <!--Start Learning-->
-  <node pkg="mir_vision" type="detection_learnObject" name="detection_learnObject" output="screen" >
+  <node pkg="mir_vision" type="learnObject" name="learnObject" output="screen" >
     <param name="object_name"               type="str"    value="Teabox" /> 
     <param name="verbose"                   type="bool"   value="true" />  
-    <param name="maxTrainImageNumber"       type="int" value="3" />
+    <param name="maxTrainImageNumber"       type="int"    value="2" />
+    <param name="path_package"              type="str"    value="$(find mir_vision)/"/>
      
     <!-- <param name="parent_frame"              type="str"    value="camera_arm_color_optical_frame" /> 
     <param name="child_frame"               type="str"    value="object" /> 
