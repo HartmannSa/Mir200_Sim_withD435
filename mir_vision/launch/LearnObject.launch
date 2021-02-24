@@ -4,27 +4,14 @@
   <!--Start Learning-->
   <node pkg="mir_vision" type="learnObject" name="learnObject" output="screen" >
     <param name="object_name"               type="str"    value="Teabox" /> 
-    <param name="verbose"                   type="bool"   value="true" />  
+    <param name="feature"                   type="str"    value="SURF" />
+    <param name="path_package"              type="str"    value="$(find mir_vision)/"/> 
+    <param name="verbose"                   type="bool"   value="true" />
+    <param name="gray"                      type="bool"   value="false" />
+    <param name="depth"                     type="bool"   value="false" />
+    <param name="keypoints"                 type="bool"   value="true" />  <!-- if false just images will be generated, otherwise keypoints are learned as well -->     
+    <param name="replaceLastImage"          type="bool"   value="false" />
+    <param name="binMode"                   type="bool"   value="true" />  
     <param name="maxTrainImageNumber"       type="int"    value="2" />
-    <param name="path_package"              type="str"    value="$(find mir_vision)/"/>
-     
-    <!-- <param name="parent_frame"              type="str"    value="camera_arm_color_optical_frame" /> 
-    <param name="child_frame"               type="str"    value="object" /> 
-    <param name="config_color"              type="str"    value="" /> 
-    <param name="config_depth"              type="str"    value="" /> 
-    <param name="model_color"               type="str"    value="$(find mir_vision)/model/teabox/teabox.cao" /> 
-    <param name="model_depth"               type="str"    value="" /> 
-    <param name="init_file"                 type="str"    value="" /> 
-    <param name="learning_data"             type="str"    value="learning/data-learned.bin" /> 
-    <param name="use_ogre"                  type="bool"   value="false" />
-    <param name="use_scanline"              type="bool"   value="false" />
-    <param name="use_edges"                 type="bool"   value="true" />
-    <param name="use_klt"                   type="bool"   value="true" />
-    <param name="use_depth"                 type="bool"   value="true" />
-    <param name="learn"                     type="bool"   value="false" />
-    <param name="auto_init"                 type="bool"   value="false" />
-    <param name="display_projection_error"  type="bool"   value="false" />
-    <param name="broadcast_transform"       type="bool"   value="true" />
-    <param name="proj_error_threshold"      type="double" value="25" /> -->
   </node>
 </launch>

@@ -34,10 +34,17 @@ std::string toString(const T &value) {
 class Detection
 {
 protected:
-    ros::NodeHandle n_;
-
-    std::string path_package;       // path to package mir_vision (starting in catkin_ws)
+    ros::NodeHandle n_;    
+    std::string path_package;       
+    std::string feature;
+    std::string learningExtension;
+    int maxTrainImageNumber;
+    bool learnMultiplePoses; 
     bool verbose;
+    bool gray, depth;
+    bool keypoints;
+    bool replaceLastImage;
+    bool binMode;
 
     // Camera Settings
     vpRealSense2 realsense;
@@ -54,18 +61,25 @@ protected:
     std::string detectorName;
     std::string extractorName;
     std::string matcherName;  
-    std::string configurationFile;
-
-    int maxTrainImageNumber;
-    bool learnMultiplePoses;  
+    std::string configurationFile; 
     
 public:
+    std::string object_name;
+
     Detection(std::string name)
     {        
         ros::NodeHandle nh("~");
-        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision");
-        nh.param<bool>("verbose", verbose, true);
-        nh.param<int>("maxTrainImageNumber", maxTrainImageNumber, 3);
+        nh.param<std::string>("object_name", object_name, "Teabox" );                               // name of object to learn
+        nh.param<std::string>("feature", feature, "ORB");                                           // select feature for the keypoints (e.g. "SURF", "SIFT")
+        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision");  // path to mir_vision (where model/ and config/ are saved)
+        nh.param<bool>("verbose", verbose, true);                                                   // print additional information
+        nh.param<bool>("gray", gray, false);                                                        // show and save Image(s) in Grayscale
+        nh.param<bool>("depth", depth, false);                                                      // show and save Image(s) with Depth
+        nh.param<bool>("keypoints", keypoints, true);                                               // detect, show and save keypoints (e.g. in _learing_data.bin)
+        nh.param<bool>("replaceLastImage", replaceLastImage, false);                                // TODO: last saved image will be overridden (deprecated)
+        nh.param<bool>("binMode", binMode, true);                                                  // If true: learningData is saved as .bin, otherwise it is saved as .xml
+        learningExtension = binMode ? ".bin" : ".xml";              
+        nh.param<int>("maxTrainImageNumber", maxTrainImageNumber, 3);                               // number of image(s) to save
         learnMultiplePoses = maxTrainImageNumber > 1 ? true : false;
         // nh.param<std::string>("config_color", config_color, "");
         // nh.param<std::string>("config_depth", config_depth, "");
@@ -172,7 +186,7 @@ public:
         vpKeyPoint::compute3DForPointsInPolygons(cMo, cam_color, trainKeyPoints, polygons, roisPt, points3f);
         // *** Save the Keypoints and their 3D coordingates in the keypoint and a file
         keypoint_learning.buildReference(I, trainKeyPoints, points3f, true, id);      
-        // keypoint_learning.saveLearningData(objectnameNumber + "_learning_data.bin", true, false);
+        // keypoint_learning.saveLearningData(objectNumberPath + "_learning_data.bin", true, false);
         
         // *** Display the learned Keypoints
         vpDisplay::display(I_color);
@@ -185,7 +199,7 @@ public:
     }
     
     
-    void createLearnImages(bool gray, bool depth, bool keypoints, std::string filename, std::string feature = "ORB", bool replaceLastImage=false){
+    void createLearnImages(){
         startCamera(640, 480, 30);
         vpDisplayOpenCV d_c, d_g, d_d;
         d_c.init(I_color,100, 50, "Color Stream"); 
@@ -193,11 +207,11 @@ public:
         if (depth) {d_d.init(I_depth,100, 50 + I_color.getHeight()+10, "Depth Stream"); }
         
         // *** Create folder       
-        std::string path = path_package + "/model/" + filename + "/";        
+        std::string path = path_package + "/model/" + object_name + "/";        
         boost::filesystem::create_directories(path);
         int number = 0;
-        std::string objectname = path + filename;
-        std::string objectnameNumber;
+        std::string objectPath = path + object_name;
+        std::string objectNumberPath;
         std::string ext = "_color.jpeg";
 
         // *** Tracker and Keypoint Settings
@@ -206,8 +220,8 @@ public:
         if (keypoints) 
         {  
             bool usexml = false;
-            if (vpIoTools::checkFilename(objectname + ".xml")) {
-                tracker.loadConfigFile(objectname + ".xml");
+            if (vpIoTools::checkFilename(objectPath + ".xml")) {
+                tracker.loadConfigFile(objectPath + ".xml");
                 tracker.getCameraParameters(cam_color);
                 usexml = true;
             }
@@ -232,10 +246,10 @@ public:
             }
             tracker.setOgreVisibilityTest(false);
             tracker.setDisplayFeatures(true);
-            if (vpIoTools::checkFilename(objectname + ".cao"))
-                tracker.loadModel(objectname + ".cao");
-            else if (vpIoTools::checkFilename(objectname + ".wrl"))
-                tracker.loadModel(objectname + ".wrl"); 
+            if (vpIoTools::checkFilename(objectPath + ".cao"))
+                tracker.loadModel(objectPath + ".cao");
+            else if (vpIoTools::checkFilename(objectPath + ".wrl"))
+                tracker.loadModel(objectPath + ".wrl"); 
 
             // *** Keypoint settings
             setDetectionSettings(feature, keypoint_learning);
@@ -279,24 +293,24 @@ public:
             // *** Create Image/ Object name
             for (number = 0; number < maxTrainImageNumber; number++)
             {
-                if ( !vpIoTools::checkFilename(objectname + std::to_string(number) + ext) )
+                if ( !vpIoTools::checkFilename(objectPath + std::to_string(number) + ext) )
                 { 
-                    if (replaceLastImage) {objectnameNumber = objectname + std::to_string(number-1); }
-                    else {objectnameNumber = objectname + std::to_string(number);}              
+                    if (replaceLastImage) {objectNumberPath = objectPath + std::to_string(number-1); }
+                    else {objectNumberPath = objectPath + std::to_string(number);}              
                     break;
                 }
             }
             
-            vpImageIo::write(I_color, objectnameNumber + ext); 
-            if (gray)  { vpImageIo::write(I_gray,  objectnameNumber +"_gray.jpeg"); }
-            if (depth) { vpImageIo::write(I_depth, objectnameNumber +"_depth.jpeg"); }
+            vpImageIo::write(I_color, objectNumberPath + ext); 
+            if (gray)  { vpImageIo::write(I_gray,  objectNumberPath +"_gray.jpeg"); }
+            if (depth) { vpImageIo::write(I_depth, objectNumberPath +"_depth.jpeg"); }
             ROS_INFO("Image(s) saved to: %s", path.c_str() );
             d_g.close(I_gray);
             d_d.close(I_depth);
 
             if (keypoints) 
             {  
-                tracker.initClick(I_color, objectnameNumber + ".init", true);
+                tracker.initClick(I_color, objectNumberPath + ".init", true);
                 learnCube(I_color, tracker, keypoint_learning, i);               
             }
         
@@ -307,28 +321,21 @@ public:
             } 
             vpDisplay::flush(I_color);
             vpDisplay::getClick(I_color, true);        
-        }
-        
-        keypoint_learning.saveLearningData(objectnameNumber + "_learning_data.xml", false, true);   // true -> .bin
+        } 
+        if (keypoints)       
+            keypoint_learning.saveLearningData(objectNumberPath + "_learning_data" + learningExtension, binMode, false);   // (filename, binaryMode, saveTrainImages)
     }
 
 };
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "detection_learn_object");
-    ros::NodeHandle n("~");
+    ros::init(argc, argv, "detection_learn_object"); 
+    Detection detection("LearnObject"); 
 
-    std::string object_name;
-    n.param<std::string>("object_name", object_name, "Teabox" );
-    ROS_INFO("Detection node to learn object %s started", object_name.c_str());
-
-    Detection detection("LearnObject");
-
-    
-    // detection.createLearnImages(true, true, true, "Teabox", "ORB");
-    // detection.createLearnImages(true, true, true, "Teabox", "SIFT");
-    detection.createLearnImages(false, false, true, object_name, "SURF");
+    ROS_INFO("Detection node to learn object %s started", detection.object_name.c_str());
+     
+    detection.createLearnImages();
 
     ros::shutdown();
     return 0;

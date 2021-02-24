@@ -20,25 +20,39 @@ typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseCl
 class CamDetectionClient
 {
 private:
+  const int STATE_SEARCHING = 0;
+  const int STATE_FINISH = 1;
+  const int STATE_FOUND_MATCH = 2;
+  const int STATE_REFINE = 3;
+
+  const int MAX_TRIAL = 1;
+
   DetectionClient client_detect;
   mir_vision::CamDetectionGoal detection_goal;
+  mir_vision::CamDetectionFeedback feedbackPrevious_;
 
   MoveBaseClient client_move;
   move_base_msgs::MoveBaseGoal move_goal;
-  geometry_msgs::PoseArray posearray;
+  geometry_msgs::PoseArray posearray_;
   int move_goal_number;
+  int trial;
+  
   bool reached_end_of_searchpath;
 
+  bool moveRobot_;
+
+
 public:
+  
   // ------------------------------------------------------ //
   //  Konstruktor und Destruktor                            //
   // ------------------------------------------------------ //   
   CamDetectionClient() : client_detect("detection", true), 
                         client_move("move_base", true)
   {
-    ROS_INFO("Waiting for action server to start.");
+    ROS_INFO("Waiting for detection action server to start.");
     client_detect.waitForServer();
-    ROS_INFO("Action server started, sending goal.");
+    ROS_INFO("Detection action server started, sending goal.");
   }
 
   ~CamDetectionClient() {}
@@ -46,15 +60,16 @@ public:
   // ------------------------------------------------------ //
   //  DetectObject ("Main Funktion")                        //
   // ------------------------------------------------------ //
-  void detectObject(std::string objekt_name, std::string learning_data, int max_time, std::string path_poses)
-  {    
+  void detectObject(std::string objekt_name, std::string learning_data, std::string path_poses, bool move_robot)
+  {  
+    moveRobot_ = move_robot;   
     move_goal_number = 0;
+    trial = 0;
     reached_end_of_searchpath = false;
     loadPoses(path_poses);
 
     detection_goal.object_name = objekt_name;
-    detection_goal.learning_data = learning_data;
-    detection_goal.max_time = max_time;  
+    detection_goal.learning_data = learning_data;    
     client_detect.sendGoal(detection_goal, 
                     boost::bind(&CamDetectionClient::doneCb, this, _1, _2),
                     boost::bind(&CamDetectionClient::activeCb, this),
@@ -75,8 +90,8 @@ public:
 
     if (file.is_open())
     {
-      posearray.header.stamp = ros::Time::now(); 
-      posearray.header.frame_id = "map"; 
+      posearray_.header.stamp = ros::Time::now(); 
+      posearray_.header.frame_id = "map"; 
       std::string line;    
       while ( getline (file,line) )
       {
@@ -94,7 +109,7 @@ public:
           p.orientation.y = qy;
           p.orientation.z = qz;
           p.orientation.w = qw;
-          posearray.poses.push_back(p);
+          posearray_.poses.push_back(p);
         }        
       }
       file.close();
@@ -108,7 +123,8 @@ public:
   {
     move_goal.target_pose.header.stamp = ros::Time::now(); 
     move_goal.target_pose.header.frame_id = frame;
-    move_goal.target_pose.pose = posearray.poses[goal_number];
+    // Posearry already initialised by loadPoses()
+    move_goal.target_pose.pose = posearray_.poses[goal_number];
   }  
 
   // ------------------------------------------------------ //
@@ -118,6 +134,8 @@ public:
               const mir_vision::CamDetectionResultConstPtr& result)
   {
     ROS_INFO("Finished in state [%s]", state.toString().c_str());
+    ROS_INFO("rotation stdev: %f; %f; %f", result->rotation_stdev.x, result->rotation_stdev.y, result->rotation_stdev.z );
+    ROS_INFO("translation stdev: %f; %f; %f", result->translation_stdev.x, result->translation_stdev.y, result->translation_stdev.z );
     ros::shutdown();
   }
 
@@ -128,13 +146,14 @@ public:
   {
     ROS_INFO("Goal just went active");
 
-    while(!client_move.waitForServer(ros::Duration(5.0))){
-      ROS_INFO("Waiting for the move_base action server to come up");
-    }
-
-    setMoveGoal(move_goal_number);
-    ROS_INFO("Sending goal number %i", move_goal_number);   
-    client_move.sendGoal(move_goal);
+    if (moveRobot_){
+      while(!client_move.waitForServer(ros::Duration(5.0))){
+        ROS_INFO("Waiting for the move_base action server to come up");
+      }
+      setMoveGoal(move_goal_number);
+      ROS_INFO("Sending first nav-goal with number %i", move_goal_number);   
+      client_move.sendGoal(move_goal);
+    }    
   } 
   
   // ------------------------------------------------------ //
@@ -142,28 +161,67 @@ public:
   // ------------------------------------------------------ //
   void feedbackCb(const mir_vision::CamDetectionFeedbackConstPtr& feedback)
   {
+    //  if (feedback->state != feedbackPrevious_.state) {ROS_INFO("Got Feedback with state %i", feedback->state);}
     ROS_INFO("Got Feedback with state %i", feedback->state);
-    ROS_INFO("Navigation is in state %s", client_move.getState().toString().c_str());
-
-    if (client_move.getState() == actionlib::SimpleClientGoalState::SUCCEEDED || client_move.getState() == actionlib::SimpleClientGoalState::ABORTED)
-    {
-      move_goal_number++;
-      // Check if the last search pose of the posearray was already send
-      if (move_goal_number >= posearray.poses.size()){
-        move_goal_number = 0; // Continue search at Startposition
-        reached_end_of_searchpath = true;
+    // ROS_INFO("Object position:    [%.2f; %.2f; %.2f]", feedback->estimated_pose.pose.position.x, feedback->estimated_pose.pose.position.y, feedback->estimated_pose.pose.position.z );
+    // ROS_INFO("Object orientation: [%.2f; %.2f; %.2f; %.2f]", feedback->estimated_pose.pose.orientation.x, feedback->estimated_pose.pose.orientation.y, feedback->estimated_pose.pose.orientation.z, feedback->estimated_pose.pose.orientation.w );
+    
+    if (moveRobot_)
+    { 
+      actionlib::SimpleClientGoalState moveState = client_move.getState();          
+      switch (feedback->state){
+        case 0: //STATE_SEARCHING           
+          if (moveState == actionlib::SimpleClientGoalState::SUCCEEDED ||
+              moveState == actionlib::SimpleClientGoalState::ABORTED ||
+              moveState == actionlib::SimpleClientGoalState::REJECTED ||
+              moveState == actionlib::SimpleClientGoalState::RECALLED ||
+              moveState == actionlib::SimpleClientGoalState::PREEMPTED) 
+          {           
+            ROS_INFO("Navigation state: %s", moveState.toString().c_str());
+            
+            if (moveState == actionlib::SimpleClientGoalState::SUCCEEDED){ 
+              move_goal_number++;} 
+            else if (moveState == actionlib::SimpleClientGoalState::ABORTED ||
+                    moveState == actionlib::SimpleClientGoalState::REJECTED) {
+              trial++;
+              move_goal_number++;
+            }
+            
+            // Send search pose, if the end of search poses is not reached already 
+            // e.g. size returns 4, than is the last goal to send 3 (because we start with goal 0)
+            if (move_goal_number < posearray_.poses.size()){    
+              setMoveGoal(move_goal_number);
+              ROS_INFO("Sending nav-goal with number %i", move_goal_number);    
+              client_move.sendGoal(move_goal);
+            } else {              
+              client_detect.cancelGoal();
+              ROS_INFO("End of search path reached. Nav-goal number %i = %zu (number of search poses).", move_goal_number, posearray_.poses.size() );
+              ROS_INFO("Cancel detection Goal %s.", detection_goal.object_name.c_str()); 
+              move_goal_number = 0; // Continue search at Startposition  
+            } 
+          }           
+          break;
+        case 1: //(STATE_FINISH):
+          break;
+        case 2: //(STATE_FOUND_MATCH):
+          ROS_INFO("Navigation state: %s", moveState.toString().c_str());
+          // If Navigation is still active,cancel it because an object is detected
+          if (moveState == actionlib::SimpleClientGoalState::ACTIVE) {
+            client_move.cancelGoal();
+            // if (move_goal_number != 0) 
+            //   move_goal_number--;
+            ROS_INFO("Cancel nav-goal %i", move_goal_number);
+          } 
+          break;
+        case 3: //(STATE_REFINE):
+          break;
+        default:
+          ROS_ERROR("The Feedback state %i is not defined!", feedback->state );
+          break;
       }
-
-      if (!reached_end_of_searchpath)
-      {
-        setMoveGoal(move_goal_number);
-        ROS_INFO("Sending goal number %i", move_goal_number);    
-        client_move.sendGoal(move_goal);
-      } else {
-        client_detect.cancelGoal();
-        ROS_INFO("Cancel detection Goal %s", detection_goal.object_name.c_str());   
-      }
-    }          
+    } 
+    feedbackPrevious_.estimated_pose = feedback->estimated_pose;            
+    feedbackPrevious_.state = feedback->state;
   }
 };
 
@@ -177,12 +235,14 @@ int main(int argc, char** argv)
   std::string path;
   std::string object_name;
   std::string learning_data;
+  bool move_robot;
   nh.param<std::string>("object_name", object_name, "Teabox");
   nh.param<std::string>("learning_data", learning_data, "Teabox0_learning_data.bin");
   nh.param<std::string>("path_searchposes", path, "/home/rosmatch/visp-ws/src/Mir200_Sim_withD435/mir_vision/config/searchPoses.config");
+  nh.param<bool>("move_robot", move_robot, true);
   
   CamDetectionClient cam_detection_client;
-  cam_detection_client.detectObject(object_name, learning_data, 200, path);
+  cam_detection_client.detectObject(object_name, learning_data, path, move_robot);
   ros::spin();
   return 0;
 }
