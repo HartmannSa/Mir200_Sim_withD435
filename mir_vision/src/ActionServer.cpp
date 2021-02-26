@@ -47,40 +47,57 @@ class CamDetectionAction
 protected:
 
     ros::NodeHandle n_;
+    ros::Subscriber sub_;
     actionlib::SimpleActionServer<mir_vision::CamDetectionAction> server_;    
     mir_vision::CamDetectionResult result_;
+    mir_vision::CamDetectionFeedback feedback_;
     int STATE_SEARCHING = 0;
     int STATE_FINISH = 1;
     int STATE_FOUND_MATCH = 2;
     int STATE_REFINE = 3;
-
-    std::string path_package;       // path to package mir_vision (starting in catkin_ws)
-    bool verbose;
+    
+    int STATUS;
+    int STATUS_CHECK_DATA = 0;
+    int STATUS_INIT = 1;
+    int STATUS_SEARCHING = 2;    
+    int STATUS_POSE_REFINEMENT = 10;
+    int STATUS_DISPLAY_MATCH = 20;
+    int STATUS_PUBLISH_FEEDBACK = 99;
+    int STATUS_END_FRAME_PROCESSING = 100;
+    int STATUS_END_DETECTION = 500;
+    int STATUS_PREEMPTED = 990;
+    int STATUS_ABORTED = 991;
+    int STATUS_EXIT = 999;   
+    
+    std::string objectName_;
+    std::string pathPackage_;       // path to package mir_vision (starting in catkin_ws)
+    std::string pathObjectFolder_; 
+    std::string modelFile_;
+    std::string learningData_;
 
     // Camera Settings
-    vpRealSense2 realsense;
-    vpCameraParameters cam_color, cam_depth; 
+    vpRealSense2 realsense_;
+    vpDisplayOpenCV d_g, d_d;
+    vpCameraParameters camColor_, camDepth_; 
     vpImage<vpRGBa> I_color; 
     vpImage<unsigned char> I_gray, I_depth, I_matches, I_train;
     vpImage<uint16_t> I_depth_raw; 
-    vpHomogeneousMatrix cMo;
+    vpHomogeneousMatrix cMo_;
     vpHomogeneousMatrix cMo_prev;
     vpHomogeneousMatrix cMo_diff;
     vpHomogeneousMatrix depth_M_color; 
-    std::vector<vpHomogeneousMatrix> cMo_vec; 
+    std::vector<vpHomogeneousMatrix> cMoVec_; 
 
-    double start, looptime, fps_measured;
-    std::vector<double> times_vec;
-
-    std::string detectorName;
-    std::string extractorName;
-    std::string matcherName;  
-    std::string configurationFile;
-
-    ros::Subscriber sub_;
-    bool moving;
+    std::string detectorName_;
+    std::string extractorName_;
+    std::string matcherName_;  
+    std::string configurationFile_;
+    
+    bool moving_;
+    bool verbose_;
+    bool success_;
     int frameThreshold;
-    int frame;
+    
     
 public:
     CamDetectionAction(std::string name):
@@ -88,83 +105,28 @@ public:
     {        
         server_.start();
         sub_ = n_.subscribe("/odom_comb", 1, &CamDetectionAction::analysisMovement, this);
-        moving = false;         // In case topic isnt published
+        moving_ = false;         // In case topic isnt published
         ros::NodeHandle nh("~");
-        nh.param<std::string>("path_package", path_package, "src/Mir200_Sim_withD435/mir_vision");
-        nh.param<bool>("verbose", verbose, true);
+        nh.param<std::string>("path_package", pathPackage_, "src/Mir200_Sim_withD435/mir_vision");
+        nh.param<bool>("verbose", verbose_, true);
         nh.param<int>("frameThreshold", frameThreshold, 20);
-        cMo_vec.assign(frameThreshold, cMo);
-
-
-        // nh.param<std::string>("parent_frame", parent_frame, "camera_arm_color_optical_frame");
-        // nh.param<std::string>("child_frame", child_frame, "object");
-        // nh.param<std::string>("config_color", config_color, "");
-        // nh.param<std::string>("config_depth", config_depth, "");
-        // nh.param<std::string>("model_color", model_color, path_package + "/model/teabox/teabox.cao" );
-        // nh.param<std::string>("model_depth", model_depth, "");
-        // nh.param<std::string>("init_file", init_file, "");
-        // nh.param<std::string>("learning_data", learning_data, "learning/data-learned.bin");  
-        // nh.param<bool>("use_ogre", use_ogre, false);
-        // nh.param<bool>("use_scanline", use_scanline, false);
-        // nh.param<bool>("use_edges", use_edges, true);
-        // nh.param<bool>("use_klt", use_klt, true);
-        // nh.param<bool>("use_depth", use_depth, true);
-        // nh.param<bool>("learn", learn, false);
-        // nh.param<bool>("auto_init", auto_init, false);
-        // nh.param<bool>("display_projection_error", display_projection_error, false);
-        // nh.param<bool>("broadcast_transform", broadcast_transform, true);
-        // nh.param<double>("proj_error_threshold", proj_error_threshold, 25);
-        // std::string parentname = vpIoTools::getParent(model_color);
-        // if (model_depth.empty()) { model_depth = model_color;}        
-        // if (config_color.empty()) {
-        //     config_color = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".xml";
-        // }
-        // if (config_depth.empty()) {
-        //     config_depth = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + "_depth.xml";
-        // }
-        // if (init_file.empty()) {
-        //     init_file = (parentname.empty() ? "" : (parentname + "/")) + vpIoTools::getNameWE(model_color) + ".init";
-        // }
-        // printSettings();
+        cMoVec_.assign(frameThreshold, cMo_);
     }
 
     ~CamDetectionAction(void) {}
-
-    // void printSettings() 
-    // {
-    //     std::cout << "Tracked features: " << std::endl;
-    //     std::cout << "  Use edges   : " << use_edges << std::endl;
-    //     std::cout << "  Use klt     : " << use_klt << std::endl;
-    //     std::cout << "  Use depth   : " << use_depth << std::endl;
-    //     std::cout << "Tracker options: " << std::endl;
-    //     std::cout << "  Use ogre    : " << use_ogre << std::endl;
-    //     std::cout << "  Use scanline: " << use_scanline << std::endl;
-    //     std::cout << "  Proj. error : " << proj_error_threshold << std::endl;
-    //     std::cout << "  Display proj. error: " << display_projection_error << std::endl;
-    //     std::cout << "Config files: " << std::endl;
-    //     std::cout << "  Config color: " << "\"" << config_color << "\"" << std::endl;
-    //     std::cout << "  Config depth: " << "\"" << config_depth << "\"" << std::endl;
-    //     std::cout << "  Model color : " << "\"" << model_color << "\"" << std::endl;
-    //     std::cout << "  Model depth : " << "\"" << model_depth << "\"" << std::endl;
-    //     std::cout << "  Init file   : " << "\"" << init_file << "\"" << std::endl;
-    //     std::cout << "Learning options   : " << std::endl;
-    //     std::cout << "  Learn       : " << learn << std::endl;
-    //     std::cout << "  Auto init   : " << auto_init << std::endl;
-    //     std::cout << "  Learning data: " << learning_data << std::endl;        
-    // }
 
     void analysisMovement(const nav_msgs::Odometry::ConstPtr& msg)
     {
         double t = 0.01;   // threshold
         double x = msg->twist.twist.linear.x;
         double z = msg->twist.twist.angular.z;
-        bool moving_old = moving;
+        bool moving_old = moving_;
 
-        moving = (abs(x) > t || abs(z) > t) ? true : false;
+        moving_ = (abs(x) > t || abs(z) > t) ? true : false;
 
-        if (moving != moving_old && verbose) 
+        if (moving_ != moving_old && verbose_) 
         {
-            if (moving) 
+            if (moving_) 
                 ROS_INFO("Robot starts to move");
             else
                 ROS_INFO("Robot stops moving");
@@ -180,23 +142,23 @@ public:
         config.enable_stream(RS2_STREAM_DEPTH, width, height, RS2_FORMAT_Z16, fps);
         depth_M_color.buildFrom(vpTranslationVector(-0.015,0,0), vpQuaternionVector(0,0,0,1));
         // *** Try to open Camera
-        try { realsense.open(config);}
+        try { realsense_.open(config);}
         catch (const vpException &e) {
-            ROS_INFO("Catch an exception: %s", e.what());
+            ROS_ERROR("Catch an exception: %s", e.what());
             ROS_INFO("Check if the Realsense camera is connected...");
             return false;}
         // *** Get and print Parameters
-        cam_color = realsense.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion); //perspectiveProjWithDistortion
-        cam_depth = realsense.getCameraParameters(RS2_STREAM_DEPTH, vpCameraParameters::perspectiveProjWithoutDistortion);
-        if (verbose){
+        camColor_ = realsense_.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithoutDistortion); //perspectiveProjWithDistortion
+        camDepth_ = realsense_.getCameraParameters(RS2_STREAM_DEPTH, vpCameraParameters::perspectiveProjWithoutDistortion);
+        if (verbose_){
             ROS_INFO("Sensor internal camera parameters for color camera: ");
-            ROS_INFO("  px = %f \t py = %f", cam_color.get_px(), cam_color.get_py());
-            ROS_INFO("  u0 = %f \t v0 = %f", cam_color.get_u0(), cam_color.get_v0());
-            ROS_INFO("  kud = %f \t kdu = %f", cam_color.get_kud(), cam_color.get_kdu());
+            ROS_INFO("  px = %f \t py = %f", camColor_.get_px(), camColor_.get_py());
+            ROS_INFO("  u0 = %f \t v0 = %f", camColor_.get_u0(), camColor_.get_v0());
+            ROS_INFO("  kud = %f \t kdu = %f", camColor_.get_kud(), camColor_.get_kdu());
             ROS_INFO("Sensor internal camera parameters for depth camera: " );
-            ROS_INFO("  px = %f \t py = %f", cam_depth.get_px(), cam_depth.get_py());
-            ROS_INFO("  u0 = %f \t v0 = %f", cam_depth.get_u0(), cam_depth.get_v0());
-            ROS_INFO("  kud = %f \t kdu = %f", cam_depth.get_kud(), cam_depth.get_kdu());
+            ROS_INFO("  px = %f \t py = %f", camDepth_.get_px(), camDepth_.get_py());
+            ROS_INFO("  u0 = %f \t v0 = %f", camDepth_.get_u0(), camDepth_.get_v0());
+            ROS_INFO("  kud = %f \t kdu = %f", camDepth_.get_kud(), camDepth_.get_kdu());
         }        
         // *** Resize images
         I_color.resize(height, width);
@@ -210,263 +172,304 @@ public:
     void setDetectionSettings(std::string name, vpKeyPoint& keypoint)
     {
         if (name == "ORB"){
-            detectorName = name;    // "FAST"
-            extractorName = name;
-            matcherName = "BruteForce-Hamming";
-            configurationFile ="detection-config.xml";
+            detectorName_ = name;    // "FAST"
+            extractorName_ = name;
+            matcherName_ = "BruteForce-Hamming";
+            configurationFile_ ="detection-config.xml";
         }
         if (name == "SIFT" || "SURF"){
-            detectorName = name;
-            extractorName = name;
-            matcherName = "FlannBased"; // "BruteForce"
-            configurationFile ="detection-config-" + name + ".xml";
+            detectorName_ = name;
+            extractorName_ = name;
+            matcherName_ = "FlannBased"; // "BruteForce"
+            configurationFile_ ="detection-config-" + name + ".xml";
         }  
-        keypoint.setDetector(detectorName);
-        keypoint.setExtractor(extractorName);
-        keypoint.setMatcher(matcherName);
+        keypoint.setDetector(detectorName_);
+        keypoint.setExtractor(extractorName_);
+        keypoint.setMatcher(matcherName_);
         keypoint.setFilterMatchingType(vpKeyPoint::ratioDistanceThreshold);               
+    }
+    
+    void getFrame(){
+        realsense_.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
+        vpImageConvert::convert(I_color, I_gray);
+        vpDisplay::display(I_gray);
+        vpDisplay::displayText(I_gray, 10, 10, "Detection and localization in process...", vpColor::red);   
     }
 
     void executeCB(const mir_vision::CamDetectionGoalConstPtr &goal)
     {
-        frame = 0;
-        bool proceed = false;
-        bool success = false;
-        bool usexml = false;
-        // cMo_prev.init();
-        std::string objectName = goal->object_name;
-        std::string learningData = goal->learning_data;
-        bool binMode = ( learningData.rfind(".bin") != std::string::npos );
-
-        std::string path = path_package + "/model/" + objectName + "/";
-        // if (!use_edges && !use_klt && !use_depth) {
-        //     std::cout << "You must choose at least one visual features between edge, KLT and depth." << std::endl;
-        //     server_.setPreempted();
-        //     proceed = false;
-        // }
-        // if (config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()) {
-        //     std::cout << "config_color.empty() || config_depth.empty() || model_color.empty() || model_depth.empty() || init_file.empty()" << std::endl;
-        //     server_.setPreempted();
-        //     proceed = false;
-        // }
-        
-        // *** Start camera and check if this worked
-        int width = 640, height = 480, fps = 30;
-        proceed = startCamera(width, height, fps); 
-        if (!proceed) {server_.setPreempted();} 
-        ROS_INFO("Start Camera");      
-        // *** Read train image as reference
-        // vpImageIo::read(I_train, path_package + "/model/" + goal->object_name + "/" + goal->object_name + "_gray.jpeg");
-        // *** Init Displays and insert images
-        vpDisplayOpenCV d_c, d_g, d_d, d_matches;
-        unsigned int _posx = 100, _posy = 50;        
-        d_g.init(       I_gray,  _posx,                         _posy,                          "Color stream");
-        // d_d.init(       I_depth, _posx + I_gray.getWidth()+10,  _posy,                          "Depth stream");
-        // d_matches.init(I_matches,_posx,                         _posy + I_gray.getHeight()+10,  "Matching Keypoints");    
-        // I_matches.insert(I_train, vpImagePoint(0, 0));
-        // I_matches.insert(I_gray, vpImagePoint(0, I_train.getWidth()));
-        
-        // *** Tracker settings
+        double start = vpTime::measureTimeSecond();
+        STATUS = STATUS_CHECK_DATA;
+        bool proceed = true;        
+        int frame = 0;
         vpMbGenericTracker tracker(vpMbGenericTracker::EDGE_TRACKER);
-        if (vpIoTools::checkFilename(path + objectName + ".xml")) {
-            tracker.loadConfigFile(path + objectName + ".xml");
-            tracker.getCameraParameters(cam_color);
-            usexml = true;
-        } 
-        if (!usexml) {
-            vpMe me;
-            me.setMaskSize(5);
-            me.setMaskNumber(180);
-            me.setRange(8);
-            me.setThreshold(10000);
-            me.setMu1(0.5);
-            me.setMu2(0.5);
-            me.setSampleStep(4);
-            me.setNbTotalSample(250);
-            tracker.setMovingEdge(me);
-            // cam.initPersProjWithoutDistortion(839, 839, 325, 243);
-            tracker.setCameraParameters(cam_color);
-            tracker.setAngleAppear(vpMath::rad(70));
-            tracker.setAngleDisappear(vpMath::rad(80));
-            tracker.setNearClippingDistance(0.1);
-            tracker.setFarClippingDistance(100.0);
-            tracker.setClipping(tracker.getClipping() | vpMbtPolygon::FOV_CLIPPING);
-        }
-        tracker.setOgreVisibilityTest(false);
-        tracker.setDisplayFeatures(true);
-        if (vpIoTools::checkFilename(path + objectName + ".cao"))
-            tracker.loadModel(path + objectName + ".cao");
-        else if (vpIoTools::checkFilename(path + objectName + ".wrl"))
-            tracker.loadModel(path + objectName + ".wrl");
-
-        // *** Set detector, extractor and matcher
         vpKeyPoint keypoint;
-        setDetectionSettings("SURF", keypoint);
-        if (usexml) {
-            keypoint.loadConfigFile(path + configurationFile);
-        } else {            
-            keypoint.setMatchingRatioThreshold(0.8);
-            keypoint.setUseRansacVVS(true);
-            keypoint.setUseRansacConsensusPercentage(true);
-            keypoint.setRansacConsensusPercentage(20.0);
-            keypoint.setRansacIteration(200);
-            keypoint.setRansacThreshold(0.005);
-        }
-        
-        ROS_INFO("%s", (path+learningData).c_str());
-        keypoint.loadLearningData(path + learningData, binMode);      
-        // ROS_INFO("Reference keypoints = %i", keypoint.buildReference(I_train) );
 
-        mir_vision::CamDetectionFeedback feedback_previous;
-        // *** Detection Loop
-        while(server_.isActive() && proceed && ros::ok())
-        {
-            start = vpTime::measureTimeMs();
-            double error;
-            double elapsedTime;
-            mir_vision::CamDetectionFeedback feedback_;
-
+        while (server_.isActive() && proceed && ros::ok()) {
             // *** Check if preempt is requested
-            if (server_.isPreemptRequested() )
+            if (server_.isPreemptRequested())
+                STATUS = STATUS_PREEMPTED;
+
+            switch (STATUS)
             {
-                ROS_INFO("Preempted");
-                server_.setPreempted();
-                proceed = false;
-                break;                              // quits the while 
-            } 
-            
-            // *** Aquire frames and display them
-            realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
-            vpImageConvert::convert(I_color, I_gray);
-            vpDisplay::display(I_gray);
-            vpDisplay::displayText(I_gray, 10, 10, "Detection and localization in process...", vpColor::red);
-            
-            if (keypoint.matchPoint(I_gray, cam_color, cMo, error, elapsedTime)) {
-                // ROS_INFO("Error: %f", error);
-                tracker.setPose(I_gray, cMo);
-
-                // *** Prepare Feedback
-                feedback_.estimated_pose = createPosesStamped(cMo);
-                feedback_.state = STATE_FOUND_MATCH;
-
-                // POSE REFINEMENT
-                // *** In case robot stops moving -> Start to calculate finale cMo
-                if (!moving){                    
-                    cMo_vec.push_back(cMo);
-                    frame++;
-                    feedback_.state = STATE_REFINE;
-                    if (frame >= frameThreshold)
-                    {
-                        // *** Compute resulting cMo from cMo_vec                        
-                        computeResult(cMo, result_.translation_stdev, result_.rotation_stdev);   
-                        // *** Create feedback and result
-                        feedback_.state = STATE_FINISH; // Feedback is still published after result is send
-                        result_.object_pose = createPosesStamped(cMo);
-                        // *** Send Result
-                        ROS_INFO("Execute successfully done: Found %s!", objectName.c_str());
-                        server_.setSucceeded(result_);
-                        proceed = false;
-                        success = true;
+                case 0:     // STATUS_CHECK_DATA
+                {
+                    ROS_INFO("STATUS: CHECK DATA AND REQUEST");
+                    STATUS = STATUS_INIT; 
+                    
+                    // *** Check if name of detection goal is given
+                    if (goal->object_name != "" ) {
+                        objectName_ = goal->object_name;
+                    } else {
+                        ROS_ERROR("No objectname given in goal." );
+                        STATUS = STATUS_ABORTED; 
+                    }              
+                    
+                    // Check files for object model
+                    pathObjectFolder_ = pathPackage_ + "/model/" + objectName_ + "/";                    
+                    if (vpIoTools::checkFilename(pathObjectFolder_ + objectName_ + ".cao")) {
+                        modelFile_ = pathObjectFolder_ + objectName_ + ".cao";
+                    } else if (vpIoTools::checkFilename(pathObjectFolder_ + objectName_ + ".wrl")) {
+                        modelFile_ = pathObjectFolder_ + objectName_ + ".wrl";
+                    } else {
+                        ROS_ERROR("Can not open object modelfile(.cao or .wrl): %s", (pathObjectFolder_ + objectName_).c_str() );
+                        STATUS = STATUS_ABORTED;                        
                     }
-                } else {
-                    cMo_vec.clear();
-                    frame = 0;
+
+                    // *** Check file for learning data
+                    learningData_ = goal->learning_data;                   
+                    if (!vpIoTools::checkFilename(pathObjectFolder_ + learningData_)) {
+                        ROS_ERROR("Can not open learning data: %s", (pathObjectFolder_+learningData_).c_str());            
+                        STATUS = STATUS_ABORTED;
+                    }              
+
+                    // *** Check Camera start
+                    int width = 640, height = 480, fps = 30;                     
+                    if (!startCamera(width, height, fps)) {
+                        ROS_ERROR("Can not open Camera");
+                        STATUS = STATUS_ABORTED;
+                    } 
+                    
+                    ROS_INFO("Valid detection request and input data.");  
+                    break;
                 }
-                // *** Display model and frame in image
-                tracker.display(I_gray, cMo, cam_color, vpColor::red, 2);                   // Is this shown after server is set to succeed?
-                vpDisplay::displayFrame(I_gray, cMo, cam_color, 0.025, vpColor::none, 3);
-                // *** Publish Feedback
-                server_.publishFeedback(feedback_);
-                ROS_INFO("Feedback state %i", feedback_.state );
-            } else {
-                feedback_.state = STATE_SEARCHING;
-                if (!moving) {
+                case 1:     // STATUS_INIT
+                {
+                    ROS_INFO("STATUS: INIT");
+                    success_ = false;
+                    // *** Display settings                    
+                    unsigned int _posx = 100, _posy = 50;        
+                    d_g.init(I_gray, _posx, _posy, "Color stream");
+                    // d_d.init(       I_depth, _posx + I_gray.getWidth()+10,  _posy,                          "Depth stream");
+                    // *** Read train image as reference
+                    // vpImageIo::read(I_train, pathPackage_ + "/model/" + goal->object_name + "/" + goal->object_name + "_gray.jpeg");
+                    // ROS_INFO("Reference keypoints = %i", keypoint.buildReference(I_train) );                    
+
+                    // *** Tracker settings
+                    tracker.setOgreVisibilityTest(false);
+                    tracker.setDisplayFeatures(true);
+                    tracker.loadModel(modelFile_);
+                    if (vpIoTools::checkFilename(pathObjectFolder_ + objectName_ + ".xml")) {
+                        tracker.loadConfigFile(pathObjectFolder_ + objectName_ + ".xml");
+                        tracker.getCameraParameters(camColor_);
+                    } else {
+                        vpMe me;
+                        me.setMaskSize(5);
+                        me.setMaskNumber(180);
+                        me.setRange(8);
+                        me.setThreshold(10000);
+                        me.setMu1(0.5);
+                        me.setMu2(0.5);
+                        me.setSampleStep(4);
+                        me.setNbTotalSample(250);
+                        tracker.setMovingEdge(me);
+                        // cam.initPersProjWithoutDistortion(839, 839, 325, 243);
+                        tracker.setCameraParameters(camColor_);
+                        tracker.setAngleAppear(vpMath::rad(70));
+                        tracker.setAngleDisappear(vpMath::rad(80));
+                        tracker.setNearClippingDistance(0.1);
+                        tracker.setFarClippingDistance(100.0);
+                        tracker.setClipping(tracker.getClipping() | vpMbtPolygon::FOV_CLIPPING);
+                    }
+                    
+                    // *** Keypoint Settings (detector, extractor, matcher, learning data)                   
+                    setDetectionSettings("SURF", keypoint);
+                    bool binMode = ( learningData_.rfind(".bin") != std::string::npos );
+                    keypoint.loadLearningData(pathObjectFolder_ + learningData_, binMode); 
+                    if (vpIoTools::checkFilename(pathObjectFolder_ + configurationFile_)){                    
+                        keypoint.loadConfigFile(pathObjectFolder_ + configurationFile_);
+                    } else {            
+                        keypoint.setMatchingRatioThreshold(0.8);
+                        keypoint.setUseRansacVVS(true);
+                        keypoint.setUseRansacConsensusPercentage(true);
+                        keypoint.setRansacConsensusPercentage(20.0);
+                        keypoint.setRansacIteration(200);
+                        keypoint.setRansacThreshold(0.005);
+                    }                     
+                    STATUS = STATUS_SEARCHING;
+                    ROS_INFO("INIT done");
+                    break;
+                }
+                case 2:     // STATUS_SEARCHING
+                {
+                    // ROS_INFO("STATUS: SEARCHING");
+                    getFrame();                                    
+                                        
+                    double error, elapsedTime;
+                    if (keypoint.matchPoint(I_gray, camColor_, cMo_, error, elapsedTime)) 
+                    {
+                        tracker.setPose(I_gray, cMo_);
+                        feedback_.estimated_pose = createPosesStamped(cMo_);
+                        feedback_.state = STATE_FOUND_MATCH;
+                        server_.publishFeedback(feedback_);
+                        ROS_INFO("PUBLISH FEEDBACK state %i", feedback_.state );
+
+                        tracker.display(I_gray, cMo_, camColor_, vpColor::red, 2);                   
+                        vpDisplay::displayFrame(I_gray, cMo_, camColor_, 0.025, vpColor::none, 3);
+
+                        if (!moving_){
+                            STATUS = STATUS_POSE_REFINEMENT;
+                            cMoVec_.clear();
+                            frame = 0;
+                        }
+
+                    } else {
+                        feedback_.state = STATE_SEARCHING;
+                        if (!moving_) {
+                            server_.publishFeedback(feedback_);
+                            ROS_INFO("PUBLISH FEEDBACK state %i", feedback_.state );
+                        }
+                    }
+                    vpDisplay::flush(I_gray);                    
+
+                    break; 
+                }                  
+                case 10:    // STATUS_POSE_REFINEMENT: case robot stops moving -> Start to calculate finale cMo_                                    
+                {    
+                    ROS_INFO("STATUS: POSE REFINEMENT");
+                    feedback_.state = STATE_REFINE;
+                    getFrame();
+                    
+                    double error, elapsedTime;
+                    if (keypoint.matchPoint(I_gray, camColor_, cMo_, error, elapsedTime)) 
+                    {
+                        tracker.setPose(I_gray, cMo_);   
+                        cMoVec_.push_back(cMo_);
+                        frame++;
+                        ROS_INFO("Frame %i", frame);
+                        if (frame >= frameThreshold)
+                        {
+                            // *** Compute resulting cMo_ from cMoVec_                        
+                            computeResult(cMo_, result_.translation_stdev, result_.rotation_stdev);                                                        
+
+                            success_ = true;
+                            feedback_.state = STATE_FINISH;
+                            STATUS = STATUS_END_DETECTION;                        
+                        }
+
+                        tracker.display(I_gray, cMo_, camColor_, vpColor::red, 2);                   
+                        vpDisplay::displayFrame(I_gray, cMo_, camColor_, 0.025, vpColor::none, 3);
+                        
+                    } else {
+                        STATUS = STATUS_SEARCHING;
+                    }
+                    vpDisplay::flush(I_gray);
                     server_.publishFeedback(feedback_);
-                    ROS_INFO("Feedback state %i", feedback_.state );
+                    ROS_INFO("PUBLISH FEEDBACK state %i", feedback_.state );
+                    break;
+                }                   
+                case 500:   // STATUS_END_DETECTION
+                {
+                    ROS_INFO("STATUS: EXECUTION FINISHED!");
+                    if (verbose_) {
+                        double detectionTime = vpTime::measureTimeSecond() - start;                        
+                        ROS_INFO("Processing time: %.2f min", detectionTime/60);
+                    } 
+                    // saveData();
+                    if (success_) {
+                        result_.object_pose = createPosesStamped(cMo_); 
+                        server_.setSucceeded(result_);
+                        ROS_INFO("SEARCH SUCCEEDED: FOUND %s!", objectName_.c_str());
+                    } else {
+                        STATUS = STATUS_EXIT;
+                    }
+                    break;
                 }
-            } 
-
-            // *** Send Feedback only when cMo is different to cMo_prev             
-            // cMo.print(); std::cout << std::endl;
-            // printHomogeneousMatrix(cMo);
-            // printRPY(cMo);
-            // vpMatrix M;
-            // vpMatrix::sub2Matrices(cMo_prev, cMo, M);
-            // double e = 0.1;
-            // if (M.getMaxValue() > e){                    
-            //     printMatrix(M); 
-            //     ROS_INFO("Max difference is: %.3f", M.getMaxValue());
-            //     sendFeedback(cMo);
-            // }                
-            // cMo_prev = cMo;
-
-            // *** Print Feedback
-            // if (feedback_.state != feedback_previous.state) {ROS_INFO("Feedback state switched to %i", feedback_.state );}              
-            // feedback_previous = feedback_;
-
-            vpDisplay::flush(I_gray);
-            
-            // I_matches.insert(I_gray, vpImagePoint(0, I_train.getWidth()));
-            // vpDisplay::display(I_matches);
-            // vpDisplay::displayLine(I_matches, vpImagePoint(0, I_train.getWidth()), 
-            //             vpImagePoint(I_train.getHeight(), I_train.getWidth()), vpColor::white, 2);              
-            // if (use_depth) {
-            //     vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
-            //     vpDisplay::display(I_depth);
-            //     vpDisplay::flush(I_depth);
-            // }
-            // unsigned int nbMatch = keypoint.matchPoint(I_gray);     // I_gray is matched with reference image
-            // ROS_INFO("Matches = %i", nbMatch);
-            // vpImagePoint iPref, iPcur;
-            // for (unsigned int i = 0; i < nbMatch; i++) {
-            //     keypoint.getMatchedPoints(i, iPref, iPcur);
-            //     vpDisplay::displayLine(I_matches, iPref, iPcur + vpImagePoint(0, I_train.getWidth()), vpColor::green);
-            // }
-            // vpDisplay::flush(I_matches);
-
-            looptime = vpTime::measureTimeMs() - start;
-            times_vec.push_back(looptime);
-            fps_measured = 1/looptime;
-        }  
-
-        ROS_INFO("Execute finished!");
-        if (!times_vec.empty() && verbose) 
-        {
-        std::cout << "\nProcessing time, Mean: " << vpMath::getMean(times_vec) << " ms ; Median: " << vpMath::getMedian(times_vec)
-                << " ; Std: " << vpMath::getStdev(times_vec) << " ms" << std::endl;
-        } 
-        // saveData();
-
-        while(ros::ok())
-        {
-            realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
-            vpImageConvert::convert(I_color, I_gray);
-            vpDisplay::display(I_gray);
-            vpDisplay::displayText(I_gray, 10, 10, "Click to close camera and finsih goal execution", vpColor::red);
-            if (success) {
-                tracker.display(I_gray, cMo, cam_color, vpColor::red, 2);                   
-                vpDisplay::displayFrame(I_gray, cMo, cam_color, 0.025, vpColor::none, 3);
+                case 990:   // STATUS_PREEMPTED
+                {
+                    ROS_INFO("STATUS: PREEMPTED (Request canceld)");
+                    server_.setPreempted();
+                    STATUS = STATUS_EXIT;
+                    break;
+                }
+                case 991:   // STATUS_ABORTED
+                {
+                    ROS_ERROR("STATUS: ABORTED GOAL %s", objectName_.c_str());
+                    server_.setAborted();                    
+                    STATUS = STATUS_EXIT;
+                    break;
+                }
+                case 999:   // STATUS_EXIT LOOP
+                {
+                    ROS_INFO("STATUS: EXIT CALLBACK");
+                    proceed = false;  
+                    break;  
+                }     
             }
 
-            if (vpDisplay::getClick(I_gray, false))
-                break;
         }
+
+        // *** Send Feedback only when cMo_ is different to cMo_prev             
+        // cMo.print(); std::cout << std::endl;
+        // printHomogeneousMatrix(cMo);
+        // printRPY(cMo_);
+        // vpMatrix M;
+        // vpMatrix::sub2Matrices(cMo_prev, cMo_, M);
+        // double e = 0.1;
+        // if (M.getMaxValue() > e){                    
+        //     printMatrix(M); 
+        //     ROS_INFO("Max difference is: %.3f", M.getMaxValue());
+        //     sendFeedback(cMo);
+        // }                
+        // cMo_prev = cMo_;
+
+        // *** Print Feedback
+        // if (feedback_.state != feedback_previous.state) {ROS_INFO("Feedback state switched to %i", feedback_.state );}              
+        // feedback_previous = feedback_;
+        
+        // I_matches.insert(I_gray, vpImagePoint(0, I_train.getWidth()));
+        // vpDisplay::display(I_matches);
+        // vpDisplay::displayLine(I_matches, vpImagePoint(0, I_train.getWidth()), 
+        //             vpImagePoint(I_train.getHeight(), I_train.getWidth()), vpColor::white, 2);              
+        // if (use_depth) {
+        //     vpImageConvert::createDepthHistogram(I_depth_raw, I_depth);
+        //     vpDisplay::display(I_depth);
+        //     vpDisplay::flush(I_depth);
+        // }
+        // unsigned int nbMatch = keypoint.matchPoint(I_gray);     // I_gray is matched with reference image
+        // ROS_INFO("Matches = %i", nbMatch);
+        // vpImagePoint iPref, iPcur;
+        // for (unsigned int i = 0; i < nbMatch; i++) {
+        //     keypoint.getMatchedPoints(i, iPref, iPcur);
+        //     vpDisplay::displayLine(I_matches, iPref, iPcur + vpImagePoint(0, I_train.getWidth()), vpColor::green);
+        // }
+        // vpDisplay::flush(I_matches);
     }
 
     void saveData()
     {
-        std::string filename = path_package + "/DetectionDataLog.txt";
+        std::string filename = pathPackage_ + "/DetectionDataLog.txt";
         std::ofstream f;
         f.open(filename.c_str());
 
-        f << "cMo_vec" << std::endl;
-        for (int i = 0; i < cMo_vec.size(); i++)
+        f << "cMoVec_" << std::endl;
+        for (int i = 0; i < cMoVec_.size(); i++)
         {
-            f << cMo_vec[i] << ";\n" << std::endl;
+            f << cMoVec_[i] << ";\n" << std::endl;
         }
 
         f << "\nCalculated cMo" << std::endl;
-        f << cMo << std::endl;
+        f << cMo_ << std::endl;
 
         f << "\nresult object pose" << std::endl;
         f << result_.object_pose << std::endl;           
@@ -525,13 +528,13 @@ public:
         Eigen::Vector3d euler_angles;
         vpRotationMatrix R;
 
-        for (int i = 0; i < cMo_vec.size(); i++)
+        for (int i = 0; i < cMoVec_.size(); i++)
         {
-            px_vec.push_back(cMo_vec[i][0][3]);
-            py_vec.push_back(cMo_vec[i][1][3]);
-            pz_vec.push_back(cMo_vec[i][2][3]);
+            px_vec.push_back(cMoVec_[i][0][3]);
+            py_vec.push_back(cMoVec_[i][1][3]);
+            pz_vec.push_back(cMoVec_[i][2][3]);
 
-            euler_angles = getRPY(cMo_vec[i], false, false);
+            euler_angles = getRPY(cMoVec_[i], false, false);
             rotz_vec.push_back(euler_angles[0]);    // gier = yaw
             roty_vec.push_back(euler_angles[1]);    // nick = pitch
             rotx_vec.push_back(euler_angles[2]);    // roll
@@ -678,7 +681,7 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //         trackerTypes.push_back(vpMbGenericTracker::DEPTH_DENSE_TRACKER);    
 //     vpMbGenericTracker tracker(trackerTypes);
 //     // In Case 2 camera frames are used (color and depth) maps need to be defined
-//     vpHomogeneousMatrix depth_M_color = realsense.getTransformation(RS2_STREAM_COLOR, RS2_STREAM_DEPTH);
+//     vpHomogeneousMatrix depth_M_color = realsense_.getTransformation(RS2_STREAM_COLOR, RS2_STREAM_DEPTH);
 //     std::map<std::string, vpHomogeneousMatrix> mapOfCameraTransformations;
 //     std::map<std::string, const vpImage<unsigned char> *> mapOfImages;
 //     std::map<std::string, std::string> mapOfInitFiles;
@@ -695,16 +698,16 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //         mapOfImages["Camera1"] = &I_gray;
 //         mapOfImages["Camera2"] = &I_depth;
 //         mapOfInitFiles["Camera1"] = init_file;
-//         tracker.setCameraParameters(cam_color, cam_depth);//     }
+//         tracker.setCameraParameters(camColor_, camDepth_);//     }
 //     else if (use_edges || use_klt) {
 //         tracker.loadConfigFile(config_color);
 //         tracker.loadModel(model_color);
-//         tracker.setCameraParameters(cam_color);
+//         tracker.setCameraParameters(camColor_);
 //     }
 //     else if (use_depth) {
 //         tracker.loadConfigFile(config_depth);
 //         tracker.loadModel(model_depth);
-//         tracker.setCameraParameters(cam_depth);
+//         tracker.setCameraParameters(camDepth_);
 //     }
 //     tracker.setDisplayFeatures(true);
 //     tracker.setOgreVisibilityTest(use_ogre);
@@ -789,7 +792,7 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //             // --------------------------------------------------------------------------------------------------------------------------
 //             //  AQUIRE IMAGES and update tracker input data
 //             // --------------------------------------------------------------------------------------------------------------------------
-//             realsense.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, &pointcloud, NULL, NULL);
+//             realsense_.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, &pointcloud, NULL, NULL);
 //             if (use_edges || use_klt || run_auto_init) {
 //                 vpImageConvert::convert(I_color, I_gray);
 //                 vpDisplay::display(I_gray);
@@ -812,7 +815,7 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //             }
 //             // Run auto initialization from learned data
 //             if (run_auto_init) {
-//                 if (keypoint.matchPoint(I_gray, cam_color, cMo)) // Check if auto initialisation was good via keypoint matching
+//                 if (keypoint.matchPoint(I_gray, camColor_, cMo)) // Check if auto initialisation was good via keypoint matching
 //                 {
 //                     std::cout << "Auto init succeed" << std::endl;
 //                     if ((use_edges || use_klt) && use_depth) {
@@ -866,7 +869,7 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //             if (tracker.getTrackerType() & vpMbGenericTracker::EDGE_TRACKER) {
 //                 proj_error = tracker.getProjectionError();
 //             } else {
-//                 proj_error = tracker.computeCurrentProjectionError(I_gray, cMo, cam_color);
+//                 proj_error = tracker.computeCurrentProjectionError(I_gray, cMo, camColor_);
 //             }
 //             if (auto_init && proj_error > proj_error_threshold) {
 //                 std::cout << "Tracker needs to restart (projection error detected: " << proj_error << ")" << std::endl;
@@ -904,15 +907,15 @@ void broadcast_transformation(const std::string parent_frame, const std::string 
 //             if (!tracking_failed) {
 //                 tracker.setDisplayFeatures(true);
 //                 if ((use_edges || use_klt) && use_depth) {
-//                     tracker.display(I_gray, I_depth, cMo, depth_M_color*cMo, cam_color, cam_depth, vpColor::red, 3);
-//                     vpDisplay::displayFrame(I_gray, cMo, cam_color, 0.05, vpColor::none, 3);
-//                     vpDisplay::displayFrame(I_depth, depth_M_color*cMo, cam_depth, 0.05, vpColor::none, 3);
+//                     tracker.display(I_gray, I_depth, cMo, depth_M_color*cMo, camColor_, camDepth_, vpColor::red, 3);
+//                     vpDisplay::displayFrame(I_gray, cMo, camColor_, 0.05, vpColor::none, 3);
+//                     vpDisplay::displayFrame(I_depth, depth_M_color*cMo, camDepth_, 0.05, vpColor::none, 3);
 //                 } else if (use_edges || use_klt) {
-//                     tracker.display(I_gray, cMo, cam_color, vpColor::red, 3);
-//                     vpDisplay::displayFrame(I_gray, cMo, cam_color, 0.05, vpColor::none, 3);
+//                     tracker.display(I_gray, cMo, camColor_, vpColor::red, 3);
+//                     vpDisplay::displayFrame(I_gray, cMo, camColor_, 0.05, vpColor::none, 3);
 //                 } else if (use_depth) {
-//                     tracker.display(I_depth, cMo, cam_depth, vpColor::red, 3);
-//                     vpDisplay::displayFrame(I_depth, cMo, cam_depth, 0.05, vpColor::none, 3);
+//                     tracker.display(I_depth, cMo, camDepth_, vpColor::red, 3);
+//                     vpDisplay::displayFrame(I_depth, cMo, camDepth_, 0.05, vpColor::none, 3);
 //                 }
 //                 std::stringstream ss;
 //                 ss << "Nb features: " << tracker.getError().size();
