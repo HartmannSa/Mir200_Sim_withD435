@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<launch>
+
+  <node pkg="mir_vision" type="detection_client" name="detection_client" output="screen" > 
+    <param name="path_searchposes"          type="str"    value="$(find mir_vision)/config/searchPoses.config" /> 
+    <param name="object_name"               type="str"    value="Teabox" />
+    <!-- <param name="learning_data"             type="str"    value="Teabox1_learning_data.xml" /> -->
+    <param name="learning_data"             type="str"    value="Teabox10_learning_data.bin" />
+    <!-- <param name="max_time"                  type="double" value="200" />  -->
+    <param name="move_robot"                type="bool"   value="true" />
+  </node>
+
+</launch>
