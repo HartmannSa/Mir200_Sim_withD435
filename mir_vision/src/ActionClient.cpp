@@ -134,6 +134,8 @@ public:
               const mir_vision::CamDetectionResultConstPtr& result)
   {
     ROS_INFO("Finished in state [%s]", state.toString().c_str());
+    ROS_INFO("position: %.3f; %.3f; %.3f [m]", result->object_pose.pose.position.x, result->object_pose.pose.position.y, result->object_pose.pose.position.z );
+    ROS_INFO("orientation: %.2f; %.2f; %.2f [degree]", result->angles.x, result->angles.y, result->angles.z );
     ROS_INFO("rotation stdev: %f; %f; %f", result->rotation_stdev.x, result->rotation_stdev.y, result->rotation_stdev.z );
     ROS_INFO("translation stdev: %f; %f; %f", result->translation_stdev.x, result->translation_stdev.y, result->translation_stdev.z );
     ros::shutdown();
@@ -238,7 +240,7 @@ int main(int argc, char** argv)
   bool move_robot;
   nh.param<std::string>("object_name", object_name, "Teabox");
   nh.param<std::string>("learning_data", learning_data, "Teabox0_learning_data.bin");
-  nh.param<std::string>("path_searchposes", path, "/home/rosmatch/visp-ws/src/Mir200_Sim_withD435/mir_vision/config/searchPoses.config");
+  nh.param<std::string>("path_searchposes", path, "src/Mir200_Sim_withD435/mir_vision/config/searchPoses.config");
   nh.param<bool>("move_robot", move_robot, true);
   
   CamDetectionClient cam_detection_client;

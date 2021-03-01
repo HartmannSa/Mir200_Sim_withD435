@@ -136,8 +136,7 @@ sudo apt install ros-melodic-ddynamic-reconfigure
 
 
 # To simulate Realsense Cam in Gazebo, the Package "realsense_gazebo_plugin" is needed.
-# Further information about how to include the D435 Plugin with MiR 
-# can be found in the Readme in Mir200_Sim_withD435 package/ see below
+# Further information about how to include the D435 Plugin with MiR see below
 
 # Intel RealSense Gazebo ROS plugin
 This package is a Gazebo ROS plugin for the Intel D435 realsense camera.
@@ -153,7 +152,9 @@ This package also includes the work developed by Intel Corporation with the ROS 
 3. Compile with catkin_make
 -> This will generate a shared library called librealsense_gazebo_plugin.so
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # The next steps are already done, if you clone HartmannSa/MiR200_Sim_withD435 Repo. 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # If you clone the rosmatch/MiR200_Sim repo they need do be done! 
 4. Download the two xacro files from 
 	https://github.com/pal-robotics-forks/realsense/tree/upstream/realsense2_description/urdf 

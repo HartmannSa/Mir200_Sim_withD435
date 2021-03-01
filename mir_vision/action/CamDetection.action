@@ -5,6 +5,7 @@ string learning_data
 ---
 #result definition
 geometry_msgs/PoseStamped object_pose
+geometry_msgs/Point angles                   # [degree] TODO: Point isnt right dataformat for phi, psi and theta
 geometry_msgs/Point rotation_stdev          # TODO: Point isnt right dataformat
 geometry_msgs/Point translation_stdev       # float64[] stdev # [x,y,z,rotx, roty, rotz]
 # int16 end_state

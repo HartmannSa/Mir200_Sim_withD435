@@ -97,6 +97,9 @@ protected:
     bool verbose_;
     bool success_;
     int frameThreshold;
+
+    double start, looptime, fps_measured;
+    std::vector<double> times_vec;
     
     
 public:
@@ -190,10 +193,17 @@ public:
     }
     
     void getFrame(){
+        looptime = vpTime::measureTimeMs() - start;
+        times_vec.push_back(looptime);
+        fps_measured = 1/(looptime/1000);
+
+        start = vpTime::measureTimeMs();
         realsense_.acquire((unsigned char *) I_color.bitmap, (unsigned char *) I_depth_raw.bitmap, NULL, NULL);
         vpImageConvert::convert(I_color, I_gray);
         vpDisplay::display(I_gray);
-        vpDisplay::displayText(I_gray, 10, 10, "Detection and localization in process...", vpColor::red);   
+        vpDisplay::displayText(I_gray, 10, 10, "Detection and localization in process...", vpColor::red);
+        vpDisplay::displayText(I_gray, 30, 10, "FPS measured: " + std::to_string(fps_measured) , vpColor::red);
+
     }
 
     void executeCB(const mir_vision::CamDetectionGoalConstPtr &goal)
@@ -308,6 +318,7 @@ public:
                     }                     
                     STATUS = STATUS_SEARCHING;
                     ROS_INFO("INIT done");
+                    start = vpTime::measureTimeMs();
                     break;
                 }
                 case 2:     // STATUS_SEARCHING
@@ -388,6 +399,7 @@ public:
                     // saveData();
                     if (success_) {
                         result_.object_pose = createPosesStamped(cMo_); 
+                        result_.angles = getAngles(cMo_);
                         server_.setSucceeded(result_);
                         ROS_INFO("SEARCH SUCCEEDED: FOUND %s!", objectName_.c_str());
                     } else {
@@ -528,6 +540,7 @@ public:
         Eigen::Vector3d euler_angles;
         vpRotationMatrix R;
 
+        ROS_INFO("cMoVec size is %zu", cMoVec_.size());
         for (int i = 0; i < cMoVec_.size(); i++)
         {
             px_vec.push_back(cMoVec_[i][0][3]);
@@ -538,6 +551,8 @@ public:
             rotz_vec.push_back(euler_angles[0]);    // gier = yaw
             roty_vec.push_back(euler_angles[1]);    // nick = pitch
             rotx_vec.push_back(euler_angles[2]);    // roll
+
+            ROS_INFO("rotx: %f; roty %f; rotz: %f", rotx_vec[i], roty_vec[i], rotz_vec[i]);
         }  
 
         // *** Mean     
@@ -557,10 +572,9 @@ public:
         r_stdev.x = vpMath::getStdev(rotx_vec);
         r_stdev.y = vpMath::getStdev(roty_vec);
         r_stdev.z = vpMath::getStdev(rotz_vec);
-
     } 
 
-    Eigen::Vector3d getRPY(const vpHomogeneousMatrix& M, bool output=false, bool degree=true) 
+    Eigen::Vector3d getRPY(const vpHomogeneousMatrix& M, bool output=false, bool degree=false) 
     {
         // *** Get Rotation
         vpRotationMatrix R;
@@ -594,6 +608,18 @@ public:
         return euler_angles;
     }   
     
+    geometry_msgs::Point getAngles(const vpHomogeneousMatrix& M) 
+    {
+        geometry_msgs::Point angles;
+        Eigen::Vector3d vec;
+        vec = getRPY(M, false, true);
+        angles.x = vec[0];
+        angles.y = vec[1];
+        angles.z = vec[2];
+
+        return angles;
+    }
+
     geometry_msgs::PoseStamped createPosesStamped(const vpHomogeneousMatrix& M)
     {        
         vpQuaternionVector q;
